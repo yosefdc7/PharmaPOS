@@ -149,6 +149,7 @@ app.post("/post", function (req, res) {
             symbol: validator.escape(req.body.symbol),
             percentage: validator.escape(req.body.percentage),
             charge_tax: req.body.charge_tax === 'on',
+            quick_billing: req.body.quick_billing === 'on',
             footer: validator.escape(req.body.footer),
             img: image,
         },

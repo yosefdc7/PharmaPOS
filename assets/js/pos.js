@@ -689,7 +689,15 @@ if (auth == undefined) {
 
     $("#payButton").on("click", function () {
       if (cart.length != 0) {
-        $("#paymentModel").modal("toggle");
+        if (settings && settings.quick_billing) {
+          const payableAmount = $("#payablePrice").val().replace(/,/g, "");
+          $("#payment").val(payableAmount);
+          $("#paymentText").val(moneyFormat(payableAmount));
+          $("#payment").trigger("input");
+          $(this).submitDueOrder(1);
+        } else {
+          $("#paymentModel").modal("toggle");
+        }
       } else {
         notiflix.Report.warning("Oops!", "There is nothing to pay!", "Ok");
       }
@@ -2019,6 +2027,14 @@ if (auth == undefined) {
         $("#logo_img").val(validator.unescape(settings.img));
         if (settings.charge_tax) {
           $("#charge_tax").prop("checked", true);
+        } else {
+          $("#charge_tax").prop("checked", false);
+        }
+
+        if (settings.quick_billing) {
+          $("#quick_billing").prop("checked", true);
+        } else {
+          $("#quick_billing").prop("checked", false);
         }
         if (validator.unescape(settings.img) != "") {
           $("#logoname").hide();
