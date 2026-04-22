@@ -21,7 +21,7 @@
     "@seald-io/nedb": "^4.0.3",
     "archiver": "^7.0.1",
     "async": "^3.2.4",
-    "bcrypt": "^5.1.0",
+    "bcrypt": "npm:bcryptjs@^2.4.3",
     "body-parser": "^1.20.4",
     "dompurify": "^3.3.4",
     "electron-context-menu": "^3.6.1",

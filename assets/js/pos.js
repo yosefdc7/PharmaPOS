@@ -1024,16 +1024,57 @@ if (auth == undefined) {
     $.fn.orderDetails = function (index, orderType) {
       $("#refNumber").val("");
 
-      if (orderType == 1) {
-        $("#refNumber").val(holdOrderList[index].ref_number);
-
+      const selectCustomerOption = (customerData) => {
         $("#customer option:selected").removeAttr("selected");
 
-        $("#customer option")
-          .filter(function () {
-            return $(this).text() == "Walk in customer";
-          })
-          .prop("selected", true);
+        if (customerData && customerData !== 0) {
+          let selected = false;
+
+          $("#customer option").each(function () {
+            let optionValue = null;
+            try {
+              optionValue = JSON.parse($(this).val());
+            } catch (e) {
+              optionValue = null;
+            }
+
+            if (optionValue && optionValue.id == customerData.id) {
+              $(this).prop("selected", true);
+              selected = true;
+              return false;
+            }
+          });
+
+          if (!selected && customerData.name) {
+            $("#customer option")
+              .filter(function () {
+                return $(this).text() == customerData.name;
+              })
+              .first()
+              .prop("selected", true);
+
+            selected = $("#customer option:selected").length > 0;
+          }
+
+          if (!selected) {
+            $("#customer option")
+              .filter(function () {
+                return $(this).text() == "Walk in customer";
+              })
+              .prop("selected", true);
+          }
+        } else {
+          $("#customer option")
+            .filter(function () {
+              return $(this).text() == "Walk in customer";
+            })
+            .prop("selected", true);
+        }
+      };
+
+      if (orderType == 1) {
+        $("#refNumber").val(holdOrderList[index].ref_number);
+        selectCustomerOption(holdOrderList[index].customer);
 
         holdOrder = holdOrderList[index]._id;
         cart = [];
@@ -1049,14 +1090,7 @@ if (auth == undefined) {
         });
       } else if (orderType == 2) {
         $("#refNumber").val("");
-
-        $("#customer option:selected").removeAttr("selected");
-
-        $("#customer option")
-          .filter(function () {
-            return $(this).text() == customerOrderList[index].customer.name;
-          })
-          .prop("selected", true);
+        selectCustomerOption(customerOrderList[index].customer);
 
         holdOrder = customerOrderList[index]._id;
         cart = [];
@@ -2033,26 +2067,27 @@ function loadTransactions() {
           const result = {};
 
           for (const { product_name, price, quantity, id } of sold_items) {
-            if (!result[product_name]) result[product_name] = [];
-            result[product_name].push({ id, price, quantity });
+            if (!result[product_name]) {
+              result[product_name] = {
+                id: id,
+                qty: 0,
+                total: 0,
+              };
+            }
+
+            const lineQty = parseFloat(quantity) || 0;
+            const linePrice = parseFloat(price) || 0;
+
+            result[product_name].qty += lineQty;
+            result[product_name].total += lineQty * linePrice;
           }
 
           for (item in result) {
-            let price = 0;
-            let quantity = 0;
-            let id = 0;
-
-            result[item].forEach((i) => {
-              id = i.id;
-              price = i.price;
-              quantity = quantity + parseInt(i.quantity);
-            });
-
             sold.push({
-              id: id,
+              id: result[item].id,
               product: item,
-              qty: quantity,
-              price: price,
+              qty: result[item].qty,
+              total: result[item].total,
             });
           }
 
@@ -2127,7 +2162,7 @@ function loadSoldProducts() {
             }</td>
             <td>${
               validator.unescape(settings.symbol) +
-              moneyFormat((item.qty * parseFloat(item.price)).toFixed(2))
+              moneyFormat(parseFloat(item.total || 0).toFixed(2))
             }</td>
             </tr>`;
 
