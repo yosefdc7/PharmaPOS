@@ -40,6 +40,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fakeroot rpm dpkg
 
+      - name: Install Linux maker backends
+        if: matrix.os == 'ubuntu-latest'
+        run: npm install --no-save electron-installer-debian@3.2.0 electron-installer-redhat@3.4.0
+
       - name: Verify Linux maker prerequisites
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -47,6 +51,7 @@ jobs:
           which rpm
           which dpkg
           npm ls electron-installer-debian electron-installer-redhat
+          node -e "require('electron-installer-debian'); require('electron-installer-redhat'); console.log('linux-maker-backends-ok');"
 
       - name: Build installers
         env:
