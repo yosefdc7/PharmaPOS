@@ -17,6 +17,7 @@ Workspace bootstrapped and Antigravity skill system fully configured. Multi-agen
 - Next.js is the intended long-term POS endstate. Electron remains temporarily as fallback/reference.
 - `web-prototype/` is a Vercel-ready Next.js interactive prototype with IndexedDB local persistence, seeded demo data, full POS/admin/reports/settings screens, external-terminal payment recording, and simulated sync.
 - `web-prototype/` now uses the Stripe palette for shared tokens and seeded product swatches while preserving the current layout and behavior.
+- `web-prototype/` products admin uses the prior compact inventory table with search, property/value filters, client-side pagination, featured/edit/delete row actions, and a shared add/edit drawer wired through existing store APIs.
 - Web delivery pipeline now enforces quality gates (typecheck/unit/integration/contract/security), deploys preview+staging+production in sequence, and blocks production on staging rollback verification.
 - Web prototype observability now includes structured logs/traces/metrics, SLO alert definitions, and runbooks for sync backlog, terminal mismatch, register outage, and rollback incidents.
 
@@ -24,4 +25,4 @@ Workspace bootstrapped and Antigravity skill system fully configured. Multi-agen
 None.
 
 ## Next Action
-Wire real preview/staging/production deployment credentials and telemetry export backends, then run the first staged promotion with a rollback drill.
+Wire real preview/staging/production deployment credentials and telemetry export backends, then run the first staged promotion with a rollback drill. Product-screen follow-up can focus on browser QA and any visual polish from user review rather than core CRUD behavior.

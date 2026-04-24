@@ -16,11 +16,13 @@ export type Product = {
   categoryId: string;
   supplier: string;
   price: number;
+  originalPrice?: number;
   quantity: number;
   minStock: number;
   tracksStock: boolean;
   expirationDate: string;
   imageColor: string;
+  featured?: boolean;
 };
 
 export type Category = {

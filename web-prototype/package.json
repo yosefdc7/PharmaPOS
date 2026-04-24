@@ -26,6 +26,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "fake-indexeddb": "latest",
+    "jsdom": "^29.0.2",
     "typescript": "latest",
     "vitest": "latest"
   }
