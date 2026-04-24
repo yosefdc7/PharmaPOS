@@ -282,7 +282,15 @@ export function PosPrototype() {
           <ReportsView transactions={store.transactions} products={store.products} customers={store.customers} symbol={symbol} dailySales={dailySales} />
         ) : null}
         {view === "sync" ? (
-          <SyncView online={store.online} queue={store.syncQueue} syncing={store.syncing} syncNow={store.syncNow} />
+          <SyncView
+            online={store.online}
+            queue={store.syncQueue}
+            syncing={store.syncing}
+            syncNow={store.syncNow}
+            snapshot={store.observabilitySnapshot}
+            alerts={store.activeAlerts}
+            sloTargets={store.sloTargets}
+          />
         ) : null}
       </section>
 
@@ -625,12 +633,18 @@ function SyncView({
   online,
   queue,
   syncing,
-  syncNow
+  syncNow,
+  snapshot,
+  alerts,
+  sloTargets
 }: {
   online: boolean;
   queue: ReturnType<typeof usePosStore>["syncQueue"];
   syncing: boolean;
   syncNow: () => Promise<void>;
+  snapshot: ReturnType<typeof usePosStore>["observabilitySnapshot"];
+  alerts: ReturnType<typeof usePosStore>["activeAlerts"];
+  sloTargets: ReturnType<typeof usePosStore>["sloTargets"];
 }) {
   return (
     <section className="panel">
@@ -654,6 +668,34 @@ function SyncView({
           </article>
         ))}
       </div>
+      <hr />
+      <h3>Observability</h3>
+      <div className="reports-grid">
+        <article className="metric"><span>Sync lag</span><strong>{snapshot.syncLagSeconds}s</strong></article>
+        <article className="metric"><span>Queue depth</span><strong>{snapshot.queueDepth}</strong></article>
+        <article className="metric"><span>Failed mutations (15m)</span><strong>{snapshot.failedMutations15m}</strong></article>
+        <article className="metric"><span>Payment failure rate (15m)</span><strong>{(snapshot.paymentFailureRate15m * 100).toFixed(1)}%</strong></article>
+        <article className="metric"><span>Offline duration</span><strong>{snapshot.offlineDurationSeconds}s</strong></article>
+        <article className="metric"><span>Order throughput</span><strong>{snapshot.orderThroughputPerHour}/hr</strong></article>
+      </div>
+      <p>
+        SLOs: lag ≤{sloTargets.maxSyncLagSeconds}s, queue ≤{sloTargets.maxQueueDepth}, failed mutations ≤{sloTargets.maxFailedMutationsPer15m}/15m,
+        payment failures ≤{(sloTargets.maxPaymentFailureRate * 100).toFixed(1)}%, offline ≤{sloTargets.maxOfflineDurationSeconds}s, throughput ≥
+        {sloTargets.minOrdersPerHour}/hr.
+      </p>
+      <DataPanel title="Active alerts">
+        {alerts.length === 0 ? <p className="empty">No active alerts.</p> : null}
+        {alerts.map((alert) => (
+          <article className="data-row" key={alert.id}>
+            <strong>{alert.id}</strong>
+            <span>{alert.severity}</span>
+            <span>{alert.summary}</span>
+            <a href={alert.runbook} target="_blank" rel="noreferrer">
+              Runbook
+            </a>
+          </article>
+        ))}
+      </DataPanel>
     </section>
   );
 }

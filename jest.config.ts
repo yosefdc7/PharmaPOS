@@ -129,6 +129,7 @@ const config: Config = {
   // roots: [
   //   "<rootDir>"
   // ],
+  roots: ["<rootDir>/tests"],
 
   // Allows you to use a custom runner instead of Jest's default test runner
   // runner: "jest-runner",
@@ -164,6 +165,7 @@ const config: Config = {
   // testPathIgnorePatterns: [
   //   "\\\\node_modules\\\\"
   // ],
+  testPathIgnorePatterns: ["\\\\node_modules\\\\", "\\\\.next\\\\"],
 
   // The regexp pattern or array of patterns that Jest uses to detect test files
   // testRegex: [],
