@@ -21,4 +21,4 @@ Workspace bootstrapped and Antigravity skill system fully configured. Multi-agen
 None.
 
 ## Next Action
-Review `web-prototype/` locally, then decide whether to proceed to production cloud backend/auth/sync design.
+Review observability docs/runbooks in `web-prototype/docs/`, then wire telemetry export to a production backend (OpenTelemetry + hosted metrics).

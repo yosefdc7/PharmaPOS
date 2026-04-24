@@ -13,6 +13,16 @@ import {
   resetPrototypeData,
   seedIfNeeded
 } from "./db";
+import {
+  buildSnapshot,
+  defaultSloTargets,
+  evaluateAlerts,
+  logStructured,
+  traced,
+  type Alert,
+  type ObservabilitySnapshot,
+  type TelemetryEvent
+} from "./observability";
 import type {
   CartItem,
   Category,
@@ -55,8 +65,17 @@ export function usePosStore() {
   const [browserOnline, setBrowserOnline] = useState(true);
   const [lastReceipt, setLastReceipt] = useState<Transaction | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
+  const [offlineStartedAt, setOfflineStartedAt] = useState<string | null>(null);
+  const [offlineSecondsTotal, setOfflineSecondsTotal] = useState(0);
 
   const online = browserOnline && !forcedOffline;
+  const pendingSync = useMemo(() => syncQueue.filter((item) => item.status === "pending"), [syncQueue]);
+
+  const recordEvent = useCallback((event: Omit<TelemetryEvent, "ts">) => {
+    const eventWithTs: TelemetryEvent = { ...event, ts: new Date().toISOString() };
+    setTelemetryEvents((existing) => [...existing.slice(-399), eventWithTs]);
+  }, []);
 
   const refresh = useCallback(async () => {
     const [nextProducts, nextCategories, nextCustomers, nextUsers, nextSettings, nextTransactions, nextHeld, nextSync] =
@@ -115,6 +134,23 @@ export function usePosStore() {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    recordEvent({ type: "network_state", details: { online } });
+    logStructured("info", "network.state", { online, forcedOffline, browserOnline });
+    if (online) {
+      if (offlineStartedAt) {
+        const durationSeconds = (Date.now() - new Date(offlineStartedAt).getTime()) / 1000;
+        setOfflineSecondsTotal((value) => value + Math.max(0, durationSeconds));
+        setOfflineStartedAt(null);
+      }
+      return;
+    }
+
+    if (!offlineStartedAt) {
+      setOfflineStartedAt(new Date().toISOString());
+    }
+  }, [browserOnline, forcedOffline, offlineStartedAt, online, recordEvent]);
+
   const totals = useMemo(
     () => calculateCartTotals(cart, settings || { chargeTax: false, vatPercentage: 0 }, discount),
     [cart, discount, settings]
@@ -163,39 +199,55 @@ export function usePosStore() {
   const completeSale = useCallback(
     async (input: SaleInput) => {
       if (!settings || !currentUser || cart.length === 0) return null;
-      const saleTotals = calculateCartTotals(cart, settings, discount);
-      const paid = input.method === "cash" ? input.paid : saleTotals.total;
-      const transaction: Transaction = {
-        id: crypto.randomUUID(),
-        localNumber: makeLocalNumber(),
-        items: cart.map((item) => ({ ...item, lineTotal: money(item.price * item.quantity) })),
-        customerId,
-        cashierId: currentUser.id,
-        createdAt: new Date().toISOString(),
-        subtotal: saleTotals.subtotal,
-        discount: saleTotals.discount,
-        tax: saleTotals.tax,
-        total: saleTotals.total,
-        paid,
-        change: calculateChange(saleTotals.total, paid),
-        paymentMethod: input.method,
-        paymentStatus: input.paymentStatus,
-        paymentReference: input.reference.trim(),
-        syncStatus: "pending"
-      };
+      return traced("pos.complete_sale", { paymentMethod: input.method, cartLines: cart.length }, async () => {
+        const saleTotals = calculateCartTotals(cart, settings, discount);
+        const paid = input.method === "cash" ? input.paid : saleTotals.total;
+        const transaction: Transaction = {
+          id: crypto.randomUUID(),
+          localNumber: makeLocalNumber(),
+          items: cart.map((item) => ({ ...item, lineTotal: money(item.price * item.quantity) })),
+          customerId,
+          cashierId: currentUser.id,
+          createdAt: new Date().toISOString(),
+          subtotal: saleTotals.subtotal,
+          discount: saleTotals.discount,
+          tax: saleTotals.tax,
+          total: saleTotals.total,
+          paid,
+          change: calculateChange(saleTotals.total, paid),
+          paymentMethod: input.method,
+          paymentStatus: input.paymentStatus,
+          paymentReference: input.reference.trim(),
+          syncStatus: "pending"
+        };
 
-      const updatedProducts = decrementStock(products, cart);
-      await putMany("products", updatedProducts);
-      await putOne("transactions", transaction);
-      await enqueueSync({ entity: "transaction", operation: "create", payload: transaction });
-      await enqueueSync({ entity: "product", operation: "update", payload: updatedProducts });
+        recordEvent({ type: "payment_attempt", details: { status: input.paymentStatus, method: input.method, total: saleTotals.total } });
+        const updatedProducts = decrementStock(products, cart);
+        await putMany("products", updatedProducts);
+        await putOne("transactions", transaction);
+        await enqueueSync({ entity: "transaction", operation: "create", payload: transaction });
+        await enqueueSync({ entity: "product", operation: "update", payload: updatedProducts });
+        recordEvent({ type: "sync_enqueued", details: { entity: "transaction", localNumber: transaction.localNumber } });
+        recordEvent({ type: "order_completed", details: { localNumber: transaction.localNumber, total: transaction.total } });
+        logStructured("info", "order.completed", {
+          localNumber: transaction.localNumber,
+          method: input.method,
+          status: input.paymentStatus,
+          total: transaction.total
+        });
 
-      setLastReceipt(transaction);
-      clearCart();
-      await refresh();
-      return transaction;
+        setLastReceipt(transaction);
+        clearCart();
+        await refresh();
+        return transaction;
+      }).catch(async (error) => {
+        const message = error instanceof Error ? error.message : "Unknown failure";
+        recordEvent({ type: "mutation_failed", details: { scope: "completeSale", message } });
+        logStructured("error", "mutation.failed", { scope: "completeSale", message });
+        throw error;
+      });
     },
-    [cart, clearCart, currentUser, customerId, discount, products, refresh, settings]
+    [cart, clearCart, currentUser, customerId, discount, products, recordEvent, refresh, settings]
   );
 
   const holdOrder = useCallback(
@@ -254,11 +306,20 @@ export function usePosStore() {
 
   const syncNow = useCallback(async () => {
     setSyncing(true);
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    await markPendingSyncAsSynced();
-    await refresh();
+    await traced("sync.now", { pending: pendingSync.length }, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      await markPendingSyncAsSynced();
+      recordEvent({ type: "sync_completed", details: { flushed: pendingSync.length } });
+      logStructured("info", "sync.completed", { flushed: pendingSync.length });
+      await refresh();
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : "Unknown failure";
+      recordEvent({ type: "sync_failed", details: { message } });
+      logStructured("error", "sync.failed", { message });
+      throw error;
+    });
     setSyncing(false);
-  }, [refresh]);
+  }, [pendingSync.length, recordEvent, refresh]);
 
   const resetData = useCallback(async () => {
     await resetPrototypeData();
@@ -274,6 +335,21 @@ export function usePosStore() {
       return Boolean(user);
     },
     [users]
+  );
+
+  const observabilitySnapshot: ObservabilitySnapshot = useMemo(() => {
+    const activeOfflineSeconds =
+      !online && offlineStartedAt ? (Date.now() - new Date(offlineStartedAt).getTime()) / 1000 : 0;
+    return buildSnapshot({
+      events: telemetryEvents,
+      pendingCreatedAt: pendingSync.map((item) => item.createdAt),
+      offlineDurationSeconds: offlineSecondsTotal + activeOfflineSeconds
+    });
+  }, [offlineSecondsTotal, offlineStartedAt, online, pendingSync, telemetryEvents]);
+
+  const activeAlerts: Alert[] = useMemo(
+    () => evaluateAlerts(observabilitySnapshot, defaultSloTargets),
+    [observabilitySnapshot]
   );
 
   return {
@@ -311,6 +387,9 @@ export function usePosStore() {
     removeEntity,
     syncNow,
     resetData,
-    login
+    login,
+    observabilitySnapshot,
+    sloTargets: defaultSloTargets,
+    activeAlerts
   };
 }
