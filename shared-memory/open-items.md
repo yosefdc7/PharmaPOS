@@ -1,5 +1,6 @@
 # Open Items
 
+- [~] Review remote branches and merge ready work into main — in progress by [codex], claimed 2026-04-24
 - [ ] Audit `~/.gemini/GEMINI.md` and `~/.gemini/antigravity/` (if present) on the user's machine. Remove any reference to `CHANGELOG.md`, `docs/DECISIONS.md`, `docs/TODO.md`, or generic "memory files." This is the likely source of prior cross-agent contamination. â€” owner: user, priority: high
 - [x] First real task — done by [codex], 2026-04-24
 - [x] Build Next.js offline-first POS prototype — done by [codex], 2026-04-24
