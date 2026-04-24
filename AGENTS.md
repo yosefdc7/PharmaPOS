@@ -5,21 +5,21 @@ This workspace uses a file-based shared-memory protocol so Codex, Antigravity/Ge
 ## Read order (every session, before acting)
 
 1. `shared-memory/state.md` — current truth.
-2. `shared-memory/open-items.md` — unresolved items, blockers, handoffs, in-progress locks.
-3. `shared-memory/README.md` — full protocol, if unfamiliar.
+2. `shared-memory/README.md` — full protocol, if unfamiliar.
+3. `shared-memory/changelog.md` — recent shared-understanding changes, especially before correcting anything that looks off.
 4. Task-specific files.
 
 ## Before starting a task
 
-- Claim the item in `shared-memory/open-items.md` by changing its checkbox to `[~] in progress by [your-agent-tag]`. Commit that change before you touch anything else.
-- If an item is already `[~] in progress by [other-agent]`, pick a different item or coordinate via a new open-items entry. Do not edit files in that item's scope.
+- Re-read `shared-memory/state.md` and `shared-memory/changelog.md` before acting.
+- If another agent appears to be actively working in the same scope, coordinate through `shared-memory/activity-log.ndjson` and `shared-memory/state.md` instead of creating or claiming lock files.
+- Do not assume state from prior turns or other tools. Reconstruct context from the shared-memory files each session.
 
 ## Write rules (on every meaningful action)
 
 1. Append one line to `shared-memory/activity-log.ndjson`. Schema is in `shared-memory/README.md`.
 2. If the action changes shared understanding (decision, preference, state, blocker, next action), update `shared-memory/state.md` and add a dated entry to `shared-memory/changelog.md`.
-3. If you open, claim, hand off, or close an item, update `shared-memory/open-items.md`.
-4. Identify yourself in commit messages: `feat(scope): description [codex]`, `fix: description [antigravity]`, etc.
+3. Identify yourself in commit messages: `feat(scope): description [codex]`, `fix: description [antigravity]`, etc.
 
 ## Rules of the road
 
