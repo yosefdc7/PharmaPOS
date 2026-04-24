@@ -1,7 +1,7 @@
 # Shared State
 
 ## Context
-Workspace bootstrapped and Antigravity skill system fully configured. Multi-agent coordination active (Codex + Antigravity + Qoder). Codex completed the modern Electron UI refresh and added a separate Next.js offline-first web POS prototype in `web-prototype/`.
+Workspace bootstrapped and Antigravity skill system fully configured. Multi-agent coordination active (Codex + Antigravity + Qoder). `main` now includes the modern Electron UI refresh, the Next.js offline-first web POS prototype in `web-prototype/`, staged rollout controls, and observability instrumentation.
 
 ## User Preferences
 - File-based shared memory; no automation scripts.

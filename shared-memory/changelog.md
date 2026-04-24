@@ -1,6 +1,10 @@
 # Shared-Memory Changelog
 
 ## 2026-04-24 - [codex]
+Changed: merged ready remote work into `main` and fixed test-runner config so root Jest and `web-prototype` Vitest both pass.
+Why: `origin/main` had drift plus one unmerged observability branch, and the repo needed a green verification baseline before pushing.
+
+## 2026-04-24 - [codex]
 Added: web-prototype observability instrumentation (structured logs/traces/metrics), SLO alert definitions, and incident runbooks.
 Why: on-call needs to detect and triage sync, payment, outage, and rollback failures quickly.
 
