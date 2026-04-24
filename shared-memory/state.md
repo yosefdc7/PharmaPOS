@@ -1,7 +1,7 @@
 # Shared State
 
 ## Context
-Workspace bootstrapped and Antigravity skill system fully configured. Multi-agent coordination active (Codex + Antigravity + Qoder). Codex completed the modern minimal responsive UI refresh for PPOS.
+Workspace bootstrapped and Antigravity skill system fully configured. Multi-agent coordination active (Codex + Antigravity + Qoder). Codex completed the modern Electron UI refresh and added a separate Next.js offline-first web POS prototype in `web-prototype/`.
 
 ## User Preferences
 - File-based shared memory; no automation scripts.
@@ -14,9 +14,11 @@ Workspace bootstrapped and Antigravity skill system fully configured. Multi-agen
 - Antigravity skills loaded from `C:\Users\josef\.codex\skills` via Customizations -> Skill Custom Paths (shared with Codex - single source of truth).
 - `new-project-copy-rules` skill handles both new project bootstrapping and savepoint workflow.
 - UI refresh uses a layered approach: `index.html` shell hooks, `assets/css/modern-ui.css`, and focused `assets/js/pos.js` renderer updates while preserving existing APIs and Bootstrap/jQuery behavior.
+- Next.js is the intended long-term POS endstate. Electron remains temporarily as fallback/reference.
+- `web-prototype/` is a Vercel-ready Next.js interactive prototype with IndexedDB local persistence, seeded demo data, full POS/admin/reports/settings screens, external-terminal payment recording, and simulated sync.
 
 ## Blockers
 None.
 
 ## Next Action
-Review the refreshed UI in Electron, especially POS cart/product workflow and responsive sidebar behavior.
+Review `web-prototype/` locally, then decide whether to proceed to production cloud backend/auth/sync design.
