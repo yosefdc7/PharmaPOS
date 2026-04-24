@@ -1,0 +1,86 @@
+name: Web Prototype Delivery
+
+on:
+  pull_request:
+    paths:
+      - "web-prototype/**"
+      - ".github/workflows/web-prototype-delivery.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "web-prototype/**"
+      - ".github/workflows/web-prototype-delivery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-prototype
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web-prototype/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:integration
+      - run: npm run test:contract
+      - run: npm run security:scan
+
+  deploy_preview:
+    name: Deploy preview
+    if: github.event_name == 'pull_request'
+    needs: gates
+    runs-on: ubuntu-latest
+    environment: preview
+    steps:
+      - name: Preview deploy placeholder
+        run: echo "Preview deployment would run here (Vercel/hosting integration)."
+
+  deploy_staging:
+    name: Deploy staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: gates
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Staging deploy placeholder
+        run: echo "Staging deployment would run here."
+
+  verify_staging_rollback:
+    name: Verify rollback in staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: deploy_staging
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-prototype
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web-prototype/package-lock.json
+      - run: npm ci
+      - run: npm run verify:rollback
+
+  deploy_production:
+    name: Deploy production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - verify_staging_rollback
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Production deploy placeholder
+        run: echo "Production deployment would run here after staging + rollback checks."

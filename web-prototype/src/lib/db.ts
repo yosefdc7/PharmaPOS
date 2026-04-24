@@ -1,3 +1,4 @@
+import { DEFAULT_FEATURE_FLAGS, mergeFeatureFlags, type FeatureFlags } from "./feature-flags";
 import {
   seedCategories,
   seedCustomers,
@@ -19,7 +20,7 @@ import type {
 } from "./types";
 
 const DB_NAME = "pharmaspot-web-prototype";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export type StoreName =
   | "meta"
@@ -58,19 +59,34 @@ type StoreEntityMap = {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+function ensureStores(db: IDBDatabase): void {
+  for (const storeName of STORES) {
+    if (!db.objectStoreNames.contains(storeName)) {
+      db.createObjectStore(storeName, { keyPath: "id" });
+    }
+  }
+}
+
+function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number): void {
+  ensureStores(db);
+
+  // V2 rollout (backward compatible): additive metadata for kill-switch flags.
+  if (oldVersion < 2) {
+    const metaStore = tx.objectStore("meta");
+    metaStore.put({ id: "featureFlags", value: DEFAULT_FEATURE_FLAGS });
+    metaStore.put({ id: "schemaVersion", value: 2 });
+  }
+}
+
 export function openPosDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
-      for (const storeName of STORES) {
-        if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName, { keyPath: "id" });
-        }
-      }
+      applyMigrations(db, request.transaction as IDBTransaction, event.oldVersion || 0);
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -138,6 +154,17 @@ export async function deleteOne(storeName: StoreName, id: string): Promise<void>
   await completeTransaction(tx);
 }
 
+export async function getFeatureFlags(): Promise<FeatureFlags> {
+  const stored = await getOne("meta", "featureFlags");
+  return mergeFeatureFlags((stored?.value as Partial<FeatureFlags> | undefined) ?? undefined);
+}
+
+export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<FeatureFlags> {
+  const next = mergeFeatureFlags({ ...(await getFeatureFlags()), ...flags });
+  await putOne("meta", { id: "featureFlags", value: next });
+  return next;
+}
+
 export async function enqueueSync(
   item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError">
 ): Promise<SyncQueueItem> {
@@ -180,6 +207,7 @@ export async function seedIfNeeded(): Promise<void> {
   await putMany("transactions", seedTransactions);
   await putMany("syncQueue", seedSyncQueue);
   await putOne("settings", seedSettings);
+  await putOne("meta", { id: "featureFlags", value: DEFAULT_FEATURE_FLAGS });
   await putOne("meta", { id: "seeded", value: true });
 }
 
