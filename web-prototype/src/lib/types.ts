@@ -6,7 +6,7 @@ export type PermissionKey =
   | "settings";
 
 export type PaymentMethod = "cash" | "external-terminal";
-export type PaymentStatus = "paid" | "pending";
+export type PaymentStatus = "paid" | "pending" | "refunded";
 export type SyncStatus = "pending" | "synced" | "failed";
 
 export type Product = {
@@ -84,6 +84,9 @@ export type Transaction = {
   paymentStatus: PaymentStatus;
   paymentReference: string;
   syncStatus: SyncStatus;
+  refundedAt?: string;
+  refundReason?: string;
+  refundReference?: string;
 };
 
 export type HeldOrder = {

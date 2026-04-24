@@ -16,9 +16,10 @@ Workspace bootstrapped and Antigravity skill system fully configured. Multi-agen
 - UI refresh uses a layered approach: `index.html` shell hooks, `assets/css/modern-ui.css`, and focused `assets/js/pos.js` renderer updates while preserving existing APIs and Bootstrap/jQuery behavior.
 - Next.js is the intended long-term POS endstate. Electron remains temporarily as fallback/reference.
 - `web-prototype/` is a Vercel-ready Next.js interactive prototype with IndexedDB local persistence, seeded demo data, full POS/admin/reports/settings screens, external-terminal payment recording, and simulated sync.
+- Web delivery pipeline now enforces quality gates (typecheck/unit/integration/contract/security), deploys preview+staging+production in sequence, and blocks production on staging rollback verification.
 
 ## Blockers
 None.
 
 ## Next Action
-Review `web-prototype/` locally, then decide whether to proceed to production cloud backend/auth/sync design.
+Wire real preview/staging/production deployment credentials (hosting + environment secrets), then run first staged promotion with rollback drill.

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { calculateCartTotals, calculateChange, decrementStock, makeLocalNumber, money } from "./calculations";
+import { DEFAULT_FEATURE_FLAGS, type FeatureFlags } from "./feature-flags";
 import {
   deleteOne,
   enqueueSync,
@@ -11,7 +12,8 @@ import {
   putMany,
   putOne,
   resetPrototypeData,
-  seedIfNeeded
+  seedIfNeeded,
+  getFeatureFlags
 } from "./db";
 import type {
   CartItem,
@@ -55,11 +57,12 @@ export function usePosStore() {
   const [browserOnline, setBrowserOnline] = useState(true);
   const [lastReceipt, setLastReceipt] = useState<Transaction | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
   const online = browserOnline && !forcedOffline;
 
   const refresh = useCallback(async () => {
-    const [nextProducts, nextCategories, nextCustomers, nextUsers, nextSettings, nextTransactions, nextHeld, nextSync] =
+    const [nextProducts, nextCategories, nextCustomers, nextUsers, nextSettings, nextTransactions, nextHeld, nextSync, nextFlags] =
       await Promise.all([
         getAll("products"),
         getAll("categories"),
@@ -68,7 +71,8 @@ export function usePosStore() {
         getOne("settings", "store"),
         getAll("transactions"),
         getAll("heldOrders"),
-        getAll("syncQueue")
+        getAll("syncQueue"),
+        getFeatureFlags()
       ]);
 
     setProducts(nextProducts);
@@ -79,6 +83,7 @@ export function usePosStore() {
     setTransactions(nextTransactions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     setHeldOrders(nextHeld.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     setSyncQueue(nextSync.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    setFeatureFlags(nextFlags);
   }, []);
 
   useEffect(() => {
@@ -163,6 +168,7 @@ export function usePosStore() {
   const completeSale = useCallback(
     async (input: SaleInput) => {
       if (!settings || !currentUser || cart.length === 0) return null;
+      if (!featureFlags.payments) return null;
       const saleTotals = calculateCartTotals(cart, settings, discount);
       const paid = input.method === "cash" ? input.paid : saleTotals.total;
       const transaction: Transaction = {
@@ -195,7 +201,7 @@ export function usePosStore() {
       await refresh();
       return transaction;
     },
-    [cart, clearCart, currentUser, customerId, discount, products, refresh, settings]
+    [cart, clearCart, currentUser, customerId, discount, featureFlags.payments, products, refresh, settings]
   );
 
   const holdOrder = useCallback(
@@ -253,12 +259,37 @@ export function usePosStore() {
   );
 
   const syncNow = useCallback(async () => {
+    if (!featureFlags.sync) return;
     setSyncing(true);
     await new Promise((resolve) => setTimeout(resolve, 700));
     await markPendingSyncAsSynced();
     await refresh();
     setSyncing(false);
-  }, [refresh]);
+  }, [featureFlags.sync, refresh]);
+
+
+
+  const refundTransaction = useCallback(
+    async (transactionId: string, reason: string) => {
+      if (!featureFlags.refunds) return null;
+      const transaction = transactions.find((item) => item.id === transactionId);
+      if (!transaction || transaction.paymentStatus === "refunded") return null;
+
+      const refunded = {
+        ...transaction,
+        paymentStatus: "refunded" as const,
+        refundReason: reason.trim() || "Operator initiated",
+        refundedAt: new Date().toISOString(),
+        refundReference: `refund-${transaction.localNumber}`
+      };
+
+      await putOne("transactions", refunded);
+      await enqueueSync({ entity: "transaction", operation: "update", payload: refunded });
+      await refresh();
+      return refunded;
+    },
+    [featureFlags.refunds, refresh, transactions]
+  );
 
   const resetData = useCallback(async () => {
     await resetPrototypeData();
@@ -296,6 +327,7 @@ export function usePosStore() {
     totals,
     lastReceipt,
     syncing,
+    featureFlags,
     setDiscount,
     setCustomerId,
     setForcedOffline,
@@ -310,6 +342,7 @@ export function usePosStore() {
     saveEntity,
     removeEntity,
     syncNow,
+    refundTransaction,
     resetData,
     login
   };
