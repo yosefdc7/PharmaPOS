@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <title></title>
     <link href="assets/dist/css/bundle.min.css" rel="stylesheet" type="text/css" />
+    <link href="assets/css/modern-ui.css" rel="stylesheet" type="text/css" />
 </head>
 
 <body>
@@ -28,11 +29,24 @@
             </div>
         </div>
     </div>
-    <div id="main_app">
-        <div class="container">
-            <div class="row">
+    <div id="main_app" class="app-shell is-pos">
+        <div class="mobile-shell-bar">
+            <button type="button" class="btn btn-default shell-toggle" data-shell-toggle="left" aria-label="Open navigation">
+                <i class="fa fa-bars"></i>
+            </button>
+            <strong>PharmaSpot</strong>
+            <button type="button" class="btn btn-success shell-toggle" data-shell-toggle="right" aria-label="Open cart">
+                <i class="fa fa-shopping-cart"></i>
+            </button>
+        </div>
+        <button type="button" class="shell-backdrop" data-shell-toggle="close" aria-label="Close sidebars"></button>
+        <div class="container app-frame">
+            <div class="row app-sidebar app-sidebar-left">
+                <div class="sidebar-brand">
+                    <img src="assets/images/logo.svg" alt="PharmaSpot">
+                </div>
                 <div class="col-md-6">
-                    <div class="button-list pull-left m-t-15 m-l-10">
+                    <div class="button-list pull-left m-t-15 m-l-10 sidebar-actions">
                         <div class="btn-group p_one">
                             <button id="productModal" data-toggle="modal" data-target="#Products" type="button" class="btn btn-success waves-effect waves-light">
                                 <span class="btn-label"><i class="  glyphicon glyphicon-barcode"></i> </span> Products
@@ -58,7 +72,7 @@
                     </div>
                 </div>
                 <div class="col-md-6">
-                    <div class="button-list m-t-15">
+                    <div class="button-list m-t-15 sidebar-actions">
                         <button id="settings" data-toggle="modal" data-target="#settingsModal" type="button" class="btn btn-success waves-effect waves-light p_five">
                             <i class="glyphicon glyphicon-cog"></i>
                         </button>
@@ -87,7 +101,7 @@
                     </div>
                 </div>
             </div>
-            <div id="transactions_view">
+            <div id="transactions_view" class="workspace-panel">
                 <div class="container">
                     <div class="row text-center m-t-20" id="totals">
                         <div id="total_sales" class="col-md-3 py-2 bg-success">
@@ -191,9 +205,9 @@
                     </div>
                 </div>
             </div>
-            <div id="pos_view">
-                <div class="row m-t-20">
-                    <div class="col-md-6">
+            <div id="pos_view" class="workspace-panel">
+                <div class="row m-t-20 pos-layout">
+                    <div class="col-md-6 pos-cart-sidebar">
                         <div class="card-box" id="card-box">
                             <div class="col-md-12">
                                 <div class="row">
@@ -269,8 +283,8 @@
                             <hr>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="card-box">
+                    <div class="col-md-6 pos-products-workspace">
+                        <div class="card-box product-browser">
                             <div class="row">
                                 <div class="col-md-6">
                                     <input type="text" id="search" class="form-control" placeholder="Search product by name or sku">

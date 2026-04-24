@@ -97,6 +97,17 @@ const {
 setContentSecurityPolicy();
 
 $(function () {
+  $("[data-shell-toggle]").on("click", function () {
+    const target = $(this).data("shell-toggle");
+    if (target === "left") {
+      $("#main_app").addClass("left-sidebar-open").removeClass("right-sidebar-open");
+    } else if (target === "right") {
+      $("#main_app").addClass("right-sidebar-open").removeClass("left-sidebar-open");
+    } else {
+      $("#main_app").removeClass("left-sidebar-open right-sidebar-open");
+    }
+  });
+
   function cb(start, end) {
     $("#reportrange span").html(
       start.format("MMMM D, YYYY") + "  -  " + end.format("MMMM D, YYYY"),
@@ -324,25 +335,25 @@ if (auth == undefined) {
           }
           
 
-          let item_info = `<div class="col-lg-2 box ${item.category}"
+          let item_info = `<div class="col-lg-2 box modern-product-card ${item.category}"
                                 onclick="$(this).addToCart(${item._id}, ${
                                   item.quantity
                                 }, ${item.stock})">
                             <div class="widget-panel widget-style-2 " title="${item.name}">                    
-                            <div id="image"><img src="${item_img}" id="product_img" alt=""></div>                    
-                                        <div class="text-muted m-t-5 text-center">
+                            <div id="image" class="product-card-image"><img src="${item_img}" id="product_img" alt=""></div>                    
+                                        <div class="text-muted m-t-5 text-center product-card-meta">
                                         <div class="name" id="product_name"><span class="${
                                           item_isExpired ? "text-danger" : ""
                                         }">${item.name}</span></div> 
                                         <span class="sku">${
                                           item.barcode || item._id
                                         }</span>
-                                        <span class="${item_stockStatus<1?'text-danger':''}"><span class="stock">STOCK </span><span class="count">${
+                                        <span class="stock-pill ${item_stockStatus<1?'text-danger':''}"><span class="stock">STOCK </span><span class="count">${
                                           item.stock == 1
                                             ? item.quantity
                                             : "N/A"
                                         }</span></span></div>
-                                        <span class="text-success text-center"><b data-plugin="counterup">${
+                                        <span class="product-card-price text-success text-center"><b data-plugin="counterup">${
                                           validator.unescape(settings.symbol) +
                                           moneyFormat(item.price)
                                         }</b> </span>
@@ -566,14 +577,14 @@ if (auth == undefined) {
       $(this).calculateCart();
       $.each(cartList, function (index, data) {
         $("#cartTable .card-body").append(
-          $("<div>", { class: "row m-t-10" }).append(
-            $("<div>", { class: "col-md-1", text: index + 1 }),
-            $("<div>", { class: "col-md-3", text: data.product_name }),
-            $("<div>", { class: "col-md-3" }).append(
-              $("<div>", { class: "input-group" }).append(
+          $("<div>", { class: "cart-line" }).append(
+            $("<div>", { class: "cart-line-index", text: index + 1 }),
+            $("<div>", { class: "cart-line-name", text: data.product_name }),
+            $("<div>", { class: "cart-line-qty" }).append(
+              $("<div>", { class: "input-group qty-stepper" }).append(
                 $("<span>", { class: "input-group-btn" }).append(
                   $("<button>", {
-                    class: "btn btn-light",
+                    class: "btn btn-light btn-sm",
                     onclick: "$(this).qtDecrement(" + index + ")",
                   }).append($("<i>", { class: "fa fa-minus" })),
                 ),
@@ -587,19 +598,19 @@ if (auth == undefined) {
                 }),
                 $("<span>", { class: "input-group-btn" }).append(
                   $("<button>", {
-                    class: "btn btn-light",
+                    class: "btn btn-light btn-sm",
                     onclick: "$(this).qtIncrement(" + index + ")",
                   }).append($("<i>", { class: "fa fa-plus" })),
                 ),
               ),
             ),
             $("<div>", {
-              class: "col-md-3",
+              class: "cart-line-price",
               text:
                 validator.unescape(settings.symbol) +
                 moneyFormat((data.price * data.quantity).toFixed(2)),
             }),
-            $("<div>", { class: "col-md-1" }).append(
+            $("<div>", { class: "cart-line-action" }).append(
               $("<button>", {
                 class: "btn btn-light btn-xs",
                 onclick: "$(this).deleteFromCart(" + index + ")",
@@ -1328,6 +1339,7 @@ if (auth == undefined) {
       loadTransactions();
       loadUserList();
 
+      $("#main_app").removeClass("is-pos right-sidebar-open").addClass("is-reports");
       $("#pos_view").hide();
       $("#pointofsale").show();
       $("#transactions_view").show();
@@ -1335,6 +1347,7 @@ if (auth == undefined) {
     });
 
     $("#pointofsale").on("click", function () {
+      $("#main_app").removeClass("is-reports").addClass("is-pos");
       $("#pos_view").show();
       $("#transactions").show();
       $("#transactions_view").hide();

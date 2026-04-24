@@ -1,18 +1,22 @@
 # Shared State
 
 ## Context
-Workspace is set up for multi-agent coordination (Codex + Antigravity/Claude + Qoder, plus any tool that honors AGENTS.md). No active task yet.
+Workspace bootstrapped and Antigravity skill system fully configured. Multi-agent coordination active (Codex + Antigravity + Qoder). Codex completed the modern minimal responsive UI refresh for PPOS.
 
 ## User Preferences
 - File-based shared memory; no automation scripts.
 - Agents use the `shared-memory/` contract; root `CHANGELOG.md`, `docs/DECISIONS.md`, `docs/TODO.md` are human-facing docs and off-limits for coordination.
 - Keep the system simple and human-inspectable.
+- Savepoint workflow (`savepoint_project_docs.py`) runs only on explicit user request. Normal dev updates shared-memory files directly.
 
 ## Active Decisions
 - `AGENTS.md` is the cross-agent entry point. `shared-memory/README.md` is the canonical protocol spec. Workspace rules win over global agent rules.
+- Antigravity skills loaded from `C:\Users\josef\.codex\skills` via Customizations -> Skill Custom Paths (shared with Codex - single source of truth).
+- `new-project-copy-rules` skill handles both new project bootstrapping and savepoint workflow.
+- UI refresh uses a layered approach: `index.html` shell hooks, `assets/css/modern-ui.css`, and focused `assets/js/pos.js` renderer updates while preserving existing APIs and Bootstrap/jQuery behavior.
 
 ## Blockers
 None.
 
 ## Next Action
-Awaiting first task.
+Review the refreshed UI in Electron, especially POS cart/product workflow and responsive sidebar behavior.
