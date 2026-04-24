@@ -6,7 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run src/lib/*.unit.test.ts src/lib/calculations.test.ts",
+    "test:integration": "vitest run src/lib/*.integration.test.ts src/lib/db.test.ts",
+    "test:contract": "vitest run src/contracts",
+    "security:scan": "npm audit --audit-level=high",
+    "verify:rollback": "vitest run src/lib/migrations.integration.test.ts",
+    "ci:gates": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:contract && npm run security:scan"
   },
   "dependencies": {
     "next": "latest",
