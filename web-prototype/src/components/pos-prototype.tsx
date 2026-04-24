@@ -29,6 +29,7 @@ function readForm(form: HTMLFormElement) {
 export function PosPrototype() {
   const store = usePosStore();
   const [view, setView] = useState<ViewKey>("pos");
+  const [navOpen, setNavOpen] = useState(true);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -96,9 +97,16 @@ export function PosPrototype() {
     setHoldReference("");
   }
 
+  function setViewAndMaybeCloseNav(nextView: ViewKey) {
+    setView(nextView);
+    if (window.matchMedia("(max-width: 760px)").matches) {
+      setNavOpen(false);
+    }
+  }
+
   return (
-    <main className="app-shell">
-      <aside className="side-nav">
+    <main className={`app-shell ${navOpen ? "nav-open" : "nav-closed"}`}>
+      <aside className={`side-nav ${navOpen ? "open" : "closed"}`}>
         <div className="brand">
           <span className="brand-mark">+</span>
           <div>
@@ -111,7 +119,7 @@ export function PosPrototype() {
             <button
               key={item.key}
               className={view === item.key ? "active" : ""}
-              onClick={() => setView(item.key)}
+              onClick={() => setViewAndMaybeCloseNav(item.key)}
             >
               {item.label}
               {item.key === "sync" && pendingSync > 0 ? <span>{pendingSync}</span> : null}
@@ -122,9 +130,19 @@ export function PosPrototype() {
 
       <section className="workspace">
         <header className="topbar">
-          <div>
-            <h1>{views.find((item) => item.key === view)?.label}</h1>
-            <p>{store.online ? "Online-ready" : "Offline mode"} with local IndexedDB writes</p>
+          <div className="topbar-main">
+            <button
+              type="button"
+              className="nav-toggle"
+              aria-label={navOpen ? "Collapse sidebar" : "Expand sidebar"}
+              onClick={() => setNavOpen((current) => !current)}
+            >
+              {navOpen ? "‹" : "›"}
+            </button>
+            <div>
+              <h1>{views.find((item) => item.key === view)?.label}</h1>
+              <p>{store.online ? "Online-ready" : "Offline mode"} with local IndexedDB writes</p>
+            </div>
           </div>
           <div className="topbar-actions">
             <label className="select-label">
@@ -167,10 +185,18 @@ export function PosPrototype() {
                     <span className="product-image" style={{ background: product.imageColor }}>
                       {product.name.slice(0, 2).toUpperCase()}
                     </span>
-                    <strong>{product.name}</strong>
-                    <small>{product.barcode}</small>
-                    <span>{formatCurrency(symbol, product.price)}</span>
-                    <em>{product.tracksStock ? `${product.quantity} in stock` : "Service"}</em>
+                    <div className="product-body">
+                      <strong className="product-name">{product.name}</strong>
+                      <div className="product-meta">
+                        <div className="product-copy">
+                          <span className="product-sku">SKU {product.barcode}</span>
+                          <span className="product-stock">{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
+                        </div>
+                        <div className="product-pricing">
+                          <span className="product-price">{formatCurrency(symbol, product.price)}</span>
+                        </div>
+                      </div>
+                    </div>
                   </button>
                 ))}
               </div>
@@ -353,7 +379,7 @@ function ProductsView({
       minStock: Number(data.minStock),
       tracksStock: data.tracksStock === "on",
       expirationDate: data.expirationDate || "N/A",
-      imageColor: "#e0f2fe"
+      imageColor: "#4379FF"
     };
     await save("products", product, "product");
     event.currentTarget.reset();

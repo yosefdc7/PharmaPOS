@@ -1,6 +1,10 @@
 # Shared-Memory Changelog
 
 ## 2026-04-24 - [codex]
+Changed: refreshed `web-prototype/` to a Stripe-aligned color system and fixed the observability test file's missing Vitest imports so `npm test` and `npm run typecheck` both pass again.
+Why: the prototype needed the requested visual direction without losing a clean verification baseline.
+
+## 2026-04-24 - [codex]
 Changed: merged ready remote work into `main` and fixed test-runner config so root Jest and `web-prototype` Vitest both pass.
 Why: `origin/main` had drift plus one unmerged observability branch, and the repo needed a green verification baseline before pushing.
 

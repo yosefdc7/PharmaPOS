@@ -19,7 +19,7 @@ export const seedProducts: Product[] = [
     minStock: 10,
     tracksStock: true,
     expirationDate: "2027-08-31",
-    imageColor: "#dbeafe"
+    imageColor: "#5433FF"
   },
   {
     id: "prd-ibu-200",
@@ -32,7 +32,7 @@ export const seedProducts: Product[] = [
     minStock: 8,
     tracksStock: true,
     expirationDate: "2027-05-18",
-    imageColor: "#fee2e2"
+    imageColor: "#F6A4EC"
   },
   {
     id: "prd-cough",
@@ -45,7 +45,7 @@ export const seedProducts: Product[] = [
     minStock: 6,
     tracksStock: true,
     expirationDate: "2026-12-12",
-    imageColor: "#dcfce7"
+    imageColor: "#97FBD1"
   },
   {
     id: "prd-vitc",
@@ -58,7 +58,7 @@ export const seedProducts: Product[] = [
     minStock: 10,
     tracksStock: true,
     expirationDate: "2028-01-20",
-    imageColor: "#fef3c7"
+    imageColor: "#1CC6FF"
   },
   {
     id: "prd-bandage",
@@ -71,7 +71,7 @@ export const seedProducts: Product[] = [
     minStock: 5,
     tracksStock: true,
     expirationDate: "2029-04-30",
-    imageColor: "#ede9fe"
+    imageColor: "#4379FF"
   },
   {
     id: "prd-consult",
@@ -84,7 +84,7 @@ export const seedProducts: Product[] = [
     minStock: 0,
     tracksStock: false,
     expirationDate: "N/A",
-    imageColor: "#e0f2fe"
+    imageColor: "#5433FF"
   }
 ];
 

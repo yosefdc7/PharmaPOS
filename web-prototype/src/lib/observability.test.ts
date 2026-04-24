@@ -1,3 +1,4 @@
+import { describe, expect, test } from "vitest";
 import { buildSnapshot, evaluateAlerts } from "./observability";
 
 describe("observability", () => {
