@@ -514,6 +514,13 @@ p {
   color: var(--muted);
 }
 
+.product-editor-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .products-table {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -790,6 +797,14 @@ p {
   gap: 14px;
   overflow: auto;
   box-shadow: 0 24px 72px rgba(10, 37, 64, 0.22);
+}
+
+.product-editor-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 0 10px;
+  background: var(--panel);
 }
 
 .product-editor-grid {
@@ -1348,7 +1363,8 @@ p {
 }
 
 .settings-tabs .segmented {
-  max-width: 594px;
+  max-width: 700px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
 .tab-badge {

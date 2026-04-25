@@ -811,11 +811,6 @@ function ProductsView({
     await save("products", { ...product, featured: !product.featured }, "product");
   }
 
-  async function adjustStock(product: Product, delta: number) {
-    if (!product.tracksStock) return;
-    await save("products", { ...product, quantity: Math.max(0, product.quantity + delta) }, "product");
-  }
-
   async function markExpired(product: Product) {
     await save("products", { ...product, quantity: 0 }, "product");
   }
@@ -1017,11 +1012,7 @@ function ProductsView({
                 </div>
                 <div className="product-actions">
                   {product.tracksStock ? (
-                    <>
-                      <button type="button" className="stock-stepper" aria-label={`Decrease stock for ${product.name}`} onClick={() => adjustStock(product, -1)}>-</button>
-                      <button type="button" className="stock-stepper" aria-label={`Increase stock for ${product.name}`} onClick={() => adjustStock(product, 1)}>+</button>
-                      <button type="button" className="icon-button danger" aria-label={`Mark ${product.name} expired`} onClick={() => markExpired(product)} title="Mark expired">⊘</button>
-                    </>
+                    <button type="button" className="icon-button danger" aria-label={`Mark ${product.name} expired`} onClick={() => markExpired(product)} title="Mark expired">?</button>
                   ) : null}
                   <button
                     type="button"
@@ -1029,7 +1020,7 @@ function ProductsView({
                     aria-label={`Toggle featured for ${product.name}`}
                     onClick={() => toggleFeatured(product)}
                   >
-                    ★
+                    ?
                   </button>
                   <button
                     type="button"
@@ -1037,15 +1028,7 @@ function ProductsView({
                     aria-label={`Edit product ${product.name}`}
                     onClick={() => openEditForm(product)}
                   >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-button danger"
-                    aria-label={`Delete product ${product.name}`}
-                    onClick={() => remove("products", product.id, "product")}
-                  >
-                    🗑
+                    ?
                   </button>
                 </div>
               </article>
@@ -1078,9 +1061,25 @@ function ProductsView({
                 <h3>{products.some((product) => product.id === draft.id) ? "Edit Product" : "Add Product"}</h3>
                 <p>Use one shared form for new products and quick edits.</p>
               </div>
-              <button type="button" onClick={closeEditor}>
-                Close
-              </button>
+              <div className="product-editor-head-actions">
+                {products.some((product) => product.id === draft.id) ? (
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={async () => {
+                      const confirmed = window.confirm(`Delete ${draft.name || "this product"}?`);
+                      if (!confirmed) return;
+                      await remove("products", draft.id, "product");
+                      closeEditor();
+                    }}
+                  >
+                    Delete Product
+                  </button>
+                ) : null}
+                <button type="button" onClick={closeEditor}>
+                  Close
+                </button>
+              </div>
             </div>
             <div className="product-editor-grid">
               <label>

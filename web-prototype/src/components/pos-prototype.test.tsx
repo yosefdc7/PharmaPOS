@@ -192,6 +192,7 @@ describe("PosPrototype products admin view", () => {
     const { products } = renderProductsView();
     const firstProduct = products[0];
     const firstRow = screen.getAllByTestId("product-row")[0];
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     fireEvent.click(within(firstRow).getByRole("button", { name: /toggle featured/i }));
     expect(saveEntity).toHaveBeenCalledWith(
@@ -204,7 +205,8 @@ describe("PosPrototype products admin view", () => {
     expect(screen.getByRole("heading", { name: "Edit Product" })).toBeTruthy();
     expect(screen.getByDisplayValue(firstProduct.name)).toBeTruthy();
 
-    fireEvent.click(within(firstRow).getByRole("button", { name: /delete product/i }));
+    fireEvent.click(screen.getByRole("button", { name: /delete product/i }));
     expect(removeEntity).toHaveBeenCalledWith("products", firstProduct.id, "product");
+    confirmSpy.mockRestore();
   });
 });
