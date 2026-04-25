@@ -1,5 +1,13 @@
 # Shared-Memory Changelog
 
+## 2026-04-24 - [antigravity]
+Changed: removed "in stock" label from the inventory table quantity column, showing only the number.
+Why: per user request to simplify the inventory view.
+
+## 2026-04-24 - [antigravity]
+Changed: updated inventory table quantity font style and color to match the category column.
+Why: standardizing the visual presentation across data columns for better legibility and a more unified design, as requested by the user.
+
 ## 2026-04-24 - [codex]
 Changed: reverted the Google-Sheets-style products table experiment and restored the prior compact products admin table.
 Why: the spreadsheet-style version was visually rejected, so the prototype should remain on the previous denser table layout until a different direction is chosen.

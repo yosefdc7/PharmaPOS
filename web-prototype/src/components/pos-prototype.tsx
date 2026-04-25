@@ -1,21 +1,50 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { isLowStock, money } from "@/lib/calculations";
+import { isLowStock, isExpired, isNearExpiry, daysUntilExpiry, money } from "@/lib/calculations";
 import { usePosStore } from "@/lib/use-pos-store";
 import type { Category, Customer, PaymentMethod, Product, Settings, User } from "@/lib/types";
+import { BirSettingsPanel } from "./bir-settings";
+import { PrinterSettingsPanel } from "./printer-settings";
+import { BirReportsPanel } from "./bir-reports";
+import { AuditTrailPanel } from "./audit-trail";
+import { PrinterStatusIndicator } from "./printer-status";
+import { ReprintQueue } from "./reprint-queue";
+import { PrintFailureModal } from "./print-failure-modal";
+import { ReceiptPreview } from "./receipt-preview";
+import { ScpwdDiscountModal } from "./scpwd-discount-modal";
+import { ScpwdBreakdownCard } from "./scpwd-breakdown-card";
+import { ScpwdEligibilityWarning } from "./scpwd-eligibility-warning";
+import { ScpwdTransactionLog } from "./scpwd-transaction-log";
+import { ScpwdSummaryCardComponent } from "./scpwd-summary-card";
+import { PrescriptionSettingsPanel } from "./prescription-settings-panel";
+import { RxWorkspace } from "./rx-workspace";
 
-type ViewKey = "pos" | "products" | "customers" | "settings" | "reports" | "sync";
+type ViewKey = "pos" | "products" | "customers" | "rx" | "settings" | "reports" | "sync";
 type ProductSortKey = "recent" | "newest" | "oldest" | "top-sold";
+type InventorySortKey = "title" | "price" | "quantity" | "category" | "expiry";
+type InventorySortDirection = "asc" | "desc";
+type CustomerSortKey = "newest" | "alphabetical";
+
+const inventorySortCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 const views: { key: ViewKey; label: string }[] = [
   { key: "pos", label: "POS" },
   { key: "products", label: "Products" },
   { key: "customers", label: "Customers" },
+  { key: "rx", label: "RX Workspace" },
   { key: "settings", label: "Settings" },
   { key: "reports", label: "Reports" },
-  { key: "sync", label: "Sync" }
+  { key: "sync", label: "Sync Online" }
 ];
+
+function getDrugClassBadge(drugClass: Product["drugClassification"]) {
+  if (drugClass === "DD, Rx") return { label: "DD", className: "drug-dd" };
+  if (drugClass === "EDD, Rx") return { label: "EDD", className: "drug-edd" };
+  if (drugClass === "Rx") return { label: "Rx", className: "drug-rx" };
+  if (drugClass === "Pharmacist-Only OTC") return { label: "P-OTC", className: "drug-potc" };
+  return { label: "OTC", className: "drug-otc" };
+}
 
 function formatCurrency(symbol: string, value: number) {
   return `${symbol}${money(value).toFixed(2)}`;
@@ -26,6 +55,13 @@ function readForm(form: HTMLFormElement) {
 }
 
 function buildProductDraft(overrides?: Partial<Product>): Product {
+  const oneYearFromNow = new Date();
+  oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+  const mm = String(oneYearFromNow.getMonth() + 1).padStart(2, "0");
+  const dd = String(oneYearFromNow.getDate()).padStart(2, "0");
+  const yyyy = oneYearFromNow.getFullYear();
+  const defaultExpiry = `${mm}/${dd}/${yyyy}`;
+
   return {
     id: overrides?.id || crypto.randomUUID(),
     name: overrides?.name || "",
@@ -37,9 +73,21 @@ function buildProductDraft(overrides?: Partial<Product>): Product {
     quantity: overrides?.quantity ?? 0,
     minStock: overrides?.minStock ?? 0,
     tracksStock: overrides?.tracksStock ?? true,
-    expirationDate: overrides?.expirationDate || "N/A",
+    expirationDate: overrides?.expirationDate || defaultExpiry,
     imageColor: overrides?.imageColor || "#4379FF",
-    featured: overrides?.featured ?? false
+    featured: overrides?.featured ?? false,
+    scPwdEligibility: overrides?.scPwdEligibility ?? "medicine",
+    vatExempt: overrides?.vatExempt ?? false,
+    isPrescription: overrides?.isPrescription ?? false,
+    drugClassification: overrides?.drugClassification ?? "Non-Rx OTC",
+    genericName: overrides?.genericName ?? "",
+    brandName: overrides?.brandName ?? "",
+    activeIngredient: overrides?.activeIngredient ?? "",
+    dosageStrength: overrides?.dosageStrength ?? "",
+    dosageForm: overrides?.dosageForm ?? "",
+    fdaCprNumber: overrides?.fdaCprNumber ?? "",
+    behindCounter: overrides?.behindCounter ?? false,
+    ddLastReconciliationAt: overrides?.ddLastReconciliationAt
   };
 }
 
@@ -54,6 +102,11 @@ export function PosPrototype() {
   const [paymentReceived, setPaymentReceived] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
   const [holdReference, setHoldReference] = useState("");
+  const [showReprintQueue, setShowReprintQueue] = useState(false);
+  const [showPrintFailure, setShowPrintFailure] = useState(false);
+  const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+  const [receiptVariant, setReceiptVariant] = useState<"normal" | "void" | "reprint">("normal");
+  const [showScPwdModal, setShowScPwdModal] = useState(false);
 
   const settings = store.settings;
   const symbol = settings?.currencySymbol || "$";
@@ -192,6 +245,7 @@ export function PosPrototype() {
             </div>
           </div>
           <div className="topbar-actions">
+            <PrinterStatusIndicator />
             <label className="select-label">
               User
               <select value={store.currentUser.username} onChange={(event) => store.login(event.target.value)}>
@@ -227,30 +281,39 @@ export function PosPrototype() {
                   <option value="oldest">Oldest</option>
                   <option value="top-sold">Top sold</option>
                 </select>
+                <button type="button" onClick={() => setShowReprintQueue(true)} style={{ marginLeft: "auto" }}>
+                  Reprint Queue
+                </button>
+                <button type="button" onClick={() => { setReceiptVariant("normal"); setShowReceiptPreview(true); }}>
+                  Preview OR
+                </button>
               </div>
               <div className="product-grid">
                 {filteredProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    className={`product-card ${isLowStock(product) ? "low" : ""}`}
-                    onClick={() => store.addToCart(product)}
-                  >
-                    <span className="product-image" style={{ background: product.imageColor }}>
-                      {product.name.slice(0, 2).toUpperCase()}
-                    </span>
-                    <div className="product-body">
-                      <strong className="product-name">{product.name}</strong>
-                      <div className="product-meta">
-                        <div className="product-copy">
-                          <span className="product-sku">SKU {product.barcode}</span>
-                          <span className="product-stock">{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
-                        </div>
-                        <div className="product-pricing">
-                          <span className="product-price">{formatCurrency(symbol, product.price)}</span>
+                    <button
+                      key={product.id}
+                      className={`product-card ${isLowStock(product) ? "low" : ""}`}
+                      onClick={() => store.addToCart(product)}
+                    >
+                      <span className="product-image" style={{ background: product.imageColor }}>
+                        {product.name.slice(0, 2).toUpperCase()}
+                      </span>
+                      <div className="product-body">
+                        <strong className="product-name">{product.name}</strong>
+                        <span className={`badge ${getDrugClassBadge(product.drugClassification).className}`}>
+                          {getDrugClassBadge(product.drugClassification).label}
+                        </span>
+                        <div className="product-meta">
+                          <div className="product-copy">
+                            <span className="product-sku">SKU {product.barcode}</span>
+                            <span className="product-stock">{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
+                          </div>
+                          <div className="product-pricing">
+                            <span className="product-price">{formatCurrency(symbol, product.price)}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
                 ))}
               </div>
             </section>
@@ -288,17 +351,52 @@ export function PosPrototype() {
                   </div>
                 ))}
               </div>
+
+              {settings.scPwdSettings?.enabled && store.cart.length > 0 && (
+                <div className="scpwd-cart-actions">
+                  <button
+                    type="button"
+                    className={store.activeScPwdDiscount ? "active" : ""}
+                    onClick={() => setShowScPwdModal(true)}
+                  >
+                    {store.activeScPwdDiscount ? "SC/PWD Active — Edit" : "Apply SC/PWD Discount"}
+                  </button>
+                </div>
+              )}
+
+              {store.activeScPwdDiscount && settings.scPwdSettings && (
+                <>
+                  <ScpwdBreakdownCard
+                    cart={store.cart}
+                    products={store.products}
+                    settings={settings}
+                    scPwdSettings={settings.scPwdSettings}
+                    symbol={symbol}
+                  />
+                  <ScpwdEligibilityWarning cartItems={store.cart} products={store.products} />
+                </>
+              )}
+
               <div className="totals">
                 <span>Items</span>
                 <strong>{store.totals.itemCount}</strong>
                 <span>Subtotal</span>
                 <strong>{formatCurrency(symbol, store.totals.subtotal)}</strong>
-                <span>Discount</span>
-                <input value={store.discount} type="number" min="0" onChange={(event) => store.setDiscount(Number(event.target.value))} />
+                <span>% Discount</span>
+                <input
+                  value={store.discount}
+                  type="number"
+                  min="0"
+                  disabled={store.activeScPwdDiscount}
+                  title={store.activeScPwdDiscount ? "Manual discount disabled while SC/PWD discount is active" : ""}
+                  onChange={(event) => store.setDiscount(Number(event.target.value))}
+                />
                 <span>VAT</span>
                 <strong>{formatCurrency(symbol, store.totals.tax)}</strong>
                 <span>Total</span>
                 <strong className="grand">{formatCurrency(symbol, store.totals.total)}</strong>
+                <span>Remarks</span>
+                <input value={store.remarks} onChange={(event) => store.setRemarks(event.target.value)} placeholder="Order notes..." />
               </div>
               <div className="payment-box">
                 <div className="segmented">
@@ -351,9 +449,25 @@ export function PosPrototype() {
         ) : null}
 
         {view === "products" ? (
-          <ProductsView products={store.products} categories={store.categories} symbol={symbol} save={store.saveEntity} remove={store.removeEntity} />
+          <ProductsView products={store.products} categories={store.categories} symbol={symbol} save={store.saveEntity} remove={store.removeEntity} alertDays={settings?.expiryAlertDays ?? 30} />
         ) : null}
         {view === "customers" ? <CustomersView customers={store.customers} save={store.saveEntity} remove={store.removeEntity} /> : null}
+        {view === "rx" ? (
+          <RxWorkspace
+            products={store.products}
+            cart={store.cart}
+            customers={store.customers}
+            pharmacists={store.rxPharmacists ?? []}
+            prescriptionDrafts={store.rxPrescriptionDrafts ?? []}
+            redFlags={store.rxRedFlags ?? []}
+            refusals={store.rxRefusals ?? []}
+            inspection={store.getRxInspectionSnapshot ? store.getRxInspectionSnapshot() : { totalRxTransactionsToday: 0, totalDdEddTransactionsToday: 0, openPartialFills: 0, redFlagsToday: 0, ddBalanceAlerts: 0 }}
+            settings={store.rxSettings ?? { ddEddLowStockThreshold: 10, profileRetentionYears: 10, hardBlockPrototypeReset: true }}
+            onSavePrescription={(draft) => store.saveRxPrescriptionDraft?.(draft)}
+            onLogRefusal={(refusal) => store.logRxRefusal?.(refusal)}
+            onClearFlag={(id) => store.clearRxRedFlag?.(id)}
+          />
+        ) : null}
         {view === "settings" ? (
           <SettingsView
             settings={settings}
@@ -362,10 +476,23 @@ export function PosPrototype() {
             save={store.saveEntity}
             remove={store.removeEntity}
             reset={store.resetData}
+            rxSettings={store.rxSettings ?? { ddEddLowStockThreshold: 10, profileRetentionYears: 10, hardBlockPrototypeReset: true }}
+            updateRxSettings={(next) => store.updateRxSettings?.(next)}
           />
         ) : null}
         {view === "reports" ? (
-          <ReportsView transactions={store.transactions} products={store.products} customers={store.customers} symbol={symbol} dailySales={dailySales} />
+          <ReportsView
+            transactions={store.transactions}
+            products={store.products}
+            customers={store.customers}
+            categories={store.categories}
+            symbol={symbol}
+            dailySales={dailySales}
+            alertDays={settings?.expiryAlertDays ?? 30}
+            scPwdTransactionLog={store.scPwdTransactionLog}
+            getScPwdSummary={store.getScPwdSummary}
+            scPwdAlerts={store.scPwdAlerts}
+          />
         ) : null}
         {view === "sync" ? (
           <SyncView
@@ -379,6 +506,61 @@ export function PosPrototype() {
           />
         ) : null}
       </section>
+
+      {showReprintQueue ? (
+        <div className="override-modal-backdrop" onClick={() => setShowReprintQueue(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 600, width: "90vw" }}>
+            <ReprintQueue onClose={() => setShowReprintQueue(false)} />
+          </div>
+        </div>
+      ) : null}
+
+      {showPrintFailure ? (
+        <PrintFailureModal
+          onClose={() => setShowPrintFailure(false)}
+          onRetry={() => {}}
+          onSkip={() => setShowPrintFailure(false)}
+        />
+      ) : null}
+
+      {showScPwdModal && settings.scPwdSettings ? (
+        <ScpwdDiscountModal
+          onApply={(details) => {
+            const validation = store.validateScPwdEligibility(details.idNumber, settings.scPwdSettings!);
+            store.applyScPwdDiscount(details);
+            if (validation.warning) {
+              alert(validation.warning);
+            }
+            setShowScPwdModal(false);
+          }}
+          onCancel={() => setShowScPwdModal(false)}
+          onRemove={(overrideBy, overrideReason) => {
+            store.removeScPwdDiscount(overrideBy, overrideReason);
+            setShowScPwdModal(false);
+          }}
+          activeDiscount={store.activeScPwdDiscount}
+          initialDraft={store.scPwdDraft}
+        />
+      ) : null}
+
+      {showReceiptPreview ? (
+        <div className="override-modal-backdrop" onClick={() => setShowReceiptPreview(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 16, flexWrap: "wrap", justifyContent: "center", padding: 20 }}>
+            <div>
+              <h3 style={{ textAlign: "center", marginBottom: 8, color: "#fff" }}>Normal Receipt</h3>
+              <ReceiptPreview variant="normal" onClose={() => setShowReceiptPreview(false)} transaction={store.lastReceipt ?? undefined} />
+            </div>
+            <div>
+              <h3 style={{ textAlign: "center", marginBottom: 8, color: "#fff" }}>Void Receipt</h3>
+              <ReceiptPreview variant="void" onClose={() => setShowReceiptPreview(false)} transaction={store.lastReceipt ?? undefined} />
+            </div>
+            <div>
+              <h3 style={{ textAlign: "center", marginBottom: 8, color: "#fff" }}>Reprint</h3>
+              <ReceiptPreview variant="reprint" onClose={() => setShowReceiptPreview(false)} transaction={store.lastReceipt ?? undefined} />
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {store.lastReceipt ? (
         <section className="receipt-drawer">
@@ -417,17 +599,21 @@ function ProductsView({
   categories,
   symbol,
   save,
-  remove
+  remove,
+  alertDays
 }: {
   products: Product[];
   categories: Category[];
   symbol: string;
   save: ReturnType<typeof usePosStore>["saveEntity"];
   remove: ReturnType<typeof usePosStore>["removeEntity"];
+  alertDays: number;
 }) {
   const [query, setQuery] = useState("");
-  const [filterKey, setFilterKey] = useState<"all" | "category" | "supplier" | "barcode" | "stock">("all");
+  const [filterKey, setFilterKey] = useState<"all" | "category" | "supplier" | "barcode" | "stock" | "expiry" | "scpwd">("all");
   const [filterValue, setFilterValue] = useState("");
+  const [sortKey, setSortKey] = useState<InventorySortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<InventorySortDirection>("asc");
   const [page, setPage] = useState(1);
   const [editorOpen, setEditorOpen] = useState(false);
   const [draft, setDraft] = useState<Product>(() => buildProductDraft({ categoryId: categories[0]?.id || "" }));
@@ -439,7 +625,7 @@ function ProductsView({
 
   const filteredProducts = useMemo(() => {
     const text = query.trim().toLowerCase();
-    return products.filter((product) => {
+    const filtered = products.filter((product) => {
       const categoryName = categoryMap[product.categoryId] || "Uncategorized";
       const matchesSearch =
         !text ||
@@ -474,9 +660,77 @@ function ProductsView({
         if (filterValue === "service") return !product.tracksStock;
       }
 
+      if (filterKey === "expiry") {
+        if (filterValue === "expired") return isExpired(product);
+        if (filterValue === "near") return isNearExpiry(product, alertDays);
+        if (filterValue === "ok") return !isExpired(product) && !isNearExpiry(product, alertDays);
+      }
+
+      if (filterKey === "scpwd") {
+        if (filterValue === "medicine") return product.scPwdEligibility === "medicine";
+        if (filterValue === "non-medicine") return product.scPwdEligibility === "non-medicine";
+        if (filterValue === "excluded") return product.scPwdEligibility === "excluded";
+        if (filterValue === "prescription") return product.isPrescription;
+        if (filterValue === "vat-exempt") return product.vatExempt;
+      }
+
       return true;
     });
-  }, [categoryMap, filterKey, filterValue, products, query]);
+
+    if (!sortKey) {
+      return filtered;
+    }
+
+    const direction = sortDirection === "asc" ? 1 : -1;
+
+    return [...filtered].sort((left, right) => {
+      const leftCategoryName = categoryMap[left.categoryId] || "Uncategorized";
+      const rightCategoryName = categoryMap[right.categoryId] || "Uncategorized";
+
+      if (sortKey === "title") {
+        return inventorySortCollator.compare(left.name, right.name) * direction;
+      }
+
+      if (sortKey === "category") {
+        const categoryComparison = inventorySortCollator.compare(leftCategoryName, rightCategoryName) * direction;
+        return categoryComparison || inventorySortCollator.compare(left.name, right.name);
+      }
+
+      if (sortKey === "price") {
+        const priceComparison = (left.price - right.price) * direction;
+        return priceComparison || inventorySortCollator.compare(left.name, right.name);
+      }
+
+      if (sortKey === "expiry") {
+        const leftDays = daysUntilExpiry(left);
+        const rightDays = daysUntilExpiry(right);
+        if (leftDays === null && rightDays === null) {
+          return inventorySortCollator.compare(left.name, right.name);
+        }
+        if (leftDays === null) return 1;
+        if (rightDays === null) return -1;
+        return ((leftDays ?? 9999) - (rightDays ?? 9999)) * direction || inventorySortCollator.compare(left.name, right.name);
+      }
+
+      const leftQuantity = left.tracksStock ? left.quantity : null;
+      const rightQuantity = right.tracksStock ? right.quantity : null;
+
+      if (leftQuantity === null && rightQuantity === null) {
+        return inventorySortCollator.compare(left.name, right.name);
+      }
+
+      if (leftQuantity === null) {
+        return 1;
+      }
+
+      if (rightQuantity === null) {
+        return -1;
+      }
+
+      const quantityComparison = (leftQuantity - rightQuantity) * direction;
+      return quantityComparison || inventorySortCollator.compare(left.name, right.name);
+    });
+  }, [categoryMap, filterKey, filterValue, products, query, sortDirection, sortKey]);
 
   const pageSize = 11;
   const pageCount = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
@@ -485,7 +739,7 @@ function ProductsView({
 
   useEffect(() => {
     setPage(1);
-  }, [filterKey, filterValue, query]);
+  }, [filterKey, filterValue, query, sortDirection, sortKey]);
 
   useEffect(() => {
     if (page > pageCount) {
@@ -514,12 +768,22 @@ function ProductsView({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const controlledClass =
+      draft.drugClassification === "DD, Rx" ||
+      draft.drugClassification === "EDD, Rx" ||
+      draft.drugClassification === "Rx" ||
+      draft.drugClassification === "Pharmacist-Only OTC";
     await save(
       "products",
       {
         ...draft,
         barcode: draft.barcode || String(Date.now()).slice(-6),
-        expirationDate: draft.expirationDate || "N/A"
+        expirationDate: draft.expirationDate || "N/A",
+        isPrescription:
+          draft.drugClassification === "DD, Rx" ||
+          draft.drugClassification === "EDD, Rx" ||
+          draft.drugClassification === "Rx",
+        behindCounter: controlledClass
       },
       "product"
     );
@@ -528,6 +792,33 @@ function ProductsView({
 
   async function toggleFeatured(product: Product) {
     await save("products", { ...product, featured: !product.featured }, "product");
+  }
+
+  async function adjustStock(product: Product, delta: number) {
+    if (!product.tracksStock) return;
+    await save("products", { ...product, quantity: Math.max(0, product.quantity + delta) }, "product");
+  }
+
+  async function markExpired(product: Product) {
+    await save("products", { ...product, quantity: 0 }, "product");
+  }
+
+  function toggleSort(nextKey: InventorySortKey) {
+    if (sortKey === nextKey) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortKey(nextKey);
+    setSortDirection("asc");
+  }
+
+  function renderSortSymbol(columnKey: InventorySortKey) {
+    if (sortKey !== columnKey) {
+      return "↕";
+    }
+
+    return sortDirection === "asc" ? "↑" : "↓";
   }
 
   return (
@@ -555,7 +846,7 @@ function ProductsView({
             aria-label="Property"
             value={filterKey}
             onChange={(event) => {
-              setFilterKey(event.target.value as "all" | "category" | "supplier" | "barcode" | "stock");
+              setFilterKey(event.target.value as "all" | "category" | "supplier" | "barcode" | "stock" | "expiry");
               setFilterValue("");
             }}
           >
@@ -564,6 +855,8 @@ function ProductsView({
             <option value="supplier">Supplier</option>
             <option value="barcode">Barcode</option>
             <option value="stock">Stock status</option>
+            <option value="expiry">Expiry status</option>
+            <option value="scpwd">SC/PWD eligibility</option>
           </select>
         </label>
         <label className="products-filter-label">
@@ -586,7 +879,25 @@ function ProductsView({
               <option value="service">Service</option>
             </select>
           ) : null}
-          {filterKey !== "category" && filterKey !== "stock" ? (
+          {filterKey === "expiry" ? (
+            <select aria-label="Value" value={filterValue} onChange={(event) => setFilterValue(event.target.value)}>
+              <option value="">Any expiry state</option>
+              <option value="expired">Expired</option>
+              <option value="near">Near expiry</option>
+              <option value="ok">OK</option>
+            </select>
+          ) : null}
+          {filterKey === "scpwd" ? (
+            <select aria-label="Value" value={filterValue} onChange={(event) => setFilterValue(event.target.value)}>
+              <option value="">Any eligibility</option>
+              <option value="medicine">Medicine</option>
+              <option value="non-medicine">Non-medicine</option>
+              <option value="excluded">Excluded</option>
+              <option value="prescription">Prescription</option>
+              <option value="vat-exempt">VAT exempt</option>
+            </select>
+          ) : null}
+          {filterKey !== "category" && filterKey !== "stock" && filterKey !== "expiry" && filterKey !== "scpwd" ? (
             <input
               aria-label="Value"
               value={filterValue}
@@ -597,12 +908,53 @@ function ProductsView({
         </label>
       </div>
 
+      {(() => {
+        const expired = products.filter((p) => isExpired(p));
+        const near = products.filter((p) => !isExpired(p) && isNearExpiry(p, alertDays));
+        if (expired.length === 0 && near.length === 0) return null;
+        return (
+          <div className={`alert-banner ${expired.length > 0 ? "critical" : "warning"}`}>
+            <span>
+              {expired.length > 0 ? `${expired.length} expired` : null}
+              {expired.length > 0 && near.length > 0 ? " and " : null}
+              {near.length > 0 ? `${near.length} near-expiry` : null} product{expired.length + near.length > 1 ? "s" : ""} need attention.
+            </span>
+          </div>
+        );
+      })()}
+
       <div className="products-table" role="table" aria-label="Products table">
         <div className="products-table-head" role="row">
-          <span>Title</span>
-          <span>Price</span>
-          <span>Quantity</span>
-          <span>Category</span>
+          <button type="button" className="table-sort" onClick={() => toggleSort("title")} aria-label="Sort by title">
+            <span>Title</span>
+            <span className="table-sort-symbol" aria-hidden="true">
+              {renderSortSymbol("title")}
+            </span>
+          </button>
+          <button type="button" className="table-sort" onClick={() => toggleSort("price")} aria-label="Sort by price">
+            <span>Price</span>
+            <span className="table-sort-symbol" aria-hidden="true">
+              {renderSortSymbol("price")}
+            </span>
+          </button>
+          <button type="button" className="table-sort" onClick={() => toggleSort("quantity")} aria-label="Sort by quantity">
+            <span>Quantity</span>
+            <span className="table-sort-symbol" aria-hidden="true">
+              {renderSortSymbol("quantity")}
+            </span>
+          </button>
+          <button type="button" className="table-sort" onClick={() => toggleSort("expiry")} aria-label="Sort by expiry">
+            <span>Expiry</span>
+            <span className="table-sort-symbol" aria-hidden="true">
+              {renderSortSymbol("expiry")}
+            </span>
+          </button>
+          <button type="button" className="table-sort" onClick={() => toggleSort("category")} aria-label="Sort by category">
+            <span>Category</span>
+            <span className="table-sort-symbol" aria-hidden="true">
+              {renderSortSymbol("category")}
+            </span>
+          </button>
           <span>Actions</span>
         </div>
         <div className="products-table-body">
@@ -614,24 +966,46 @@ function ProductsView({
                 <div className="product-cell product-title">
                   <strong>{product.name}</strong>
                   <small>{product.barcode}</small>
+                  <span className={`badge ${getDrugClassBadge(product.drugClassification).className}`}>
+                    {getDrugClassBadge(product.drugClassification).label}
+                  </span>
+                  {product.isPrescription && <span className="badge prescription">Rx</span>}
+                  {product.scPwdEligibility && product.scPwdEligibility !== "excluded" && (
+                    <span className={`badge scpwd-${product.scPwdEligibility}`}>
+                      {product.scPwdEligibility === "medicine" ? "Med" : "Non-Med"}
+                    </span>
+                  )}
                 </div>
                 <div className="product-cell product-price-cell">
                   {typeof product.originalPrice === "number" && product.originalPrice > product.price ? (
                     <span className="price-original">{formatCurrency(symbol, product.originalPrice)}</span>
                   ) : null}
-                  <strong>{formatCurrency(symbol, product.price)}</strong>
+                  <span className="product-price">{formatCurrency(symbol, product.price)}</span>
                 </div>
                 <div className="product-cell">
-                  {product.tracksStock ? (
-                    <span className={isLowStock(product) ? "quantity-low" : "quantity-ok"}>{product.quantity}</span>
-                  ) : (
-                    <span className="quantity-service">Service</span>
-                  )}
+                  <span className={`product-inventory-stock ${isLowStock(product) ? "quantity-low" : product.tracksStock ? "quantity-ok" : "quantity-service"}`}>{product.tracksStock ? product.quantity : "Service"}</span>
                 </div>
                 <div className="product-cell">
-                  <span>{categoryName}</span>
+                  {(() => {
+                    const expired = isExpired(product);
+                    const near = !expired && isNearExpiry(product, alertDays);
+                    if (!product.tracksStock) return <span className="expiry-badge service">N/A</span>;
+                    if (expired) return <span className="expiry-badge expired">Expired</span>;
+                    if (near) return <span className="expiry-badge near">{daysUntilExpiry(product)}d</span>;
+                    return <span className="expiry-badge ok">{product.expirationDate}</span>;
+                  })()}
+                </div>
+                <div className="product-cell">
+                  <span className="product-inventory-category">{categoryName}</span>
                 </div>
                 <div className="product-actions">
+                  {product.tracksStock ? (
+                    <>
+                      <button type="button" className="stock-stepper" aria-label={`Decrease stock for ${product.name}`} onClick={() => adjustStock(product, -1)}>-</button>
+                      <button type="button" className="stock-stepper" aria-label={`Increase stock for ${product.name}`} onClick={() => adjustStock(product, 1)}>+</button>
+                      <button type="button" className="icon-button danger" aria-label={`Mark ${product.name} expired`} onClick={() => markExpired(product)} title="Mark expired">⊘</button>
+                    </>
+                  ) : null}
                   <button
                     type="button"
                     className={`icon-button ${product.featured ? "active" : ""}`}
@@ -755,7 +1129,28 @@ function ProductsView({
               </label>
               <label>
                 Expiry Date
-                <input value={draft.expirationDate} onChange={(event) => updateDraft("expirationDate", event.target.value)} />
+                <input
+                  type="date"
+                  value={
+                    draft.expirationDate && draft.expirationDate.includes("/")
+                      ? (() => {
+                          const [m, d, y] = draft.expirationDate.split("/");
+                          return y && m && d ? `${y}-${m}-${d}` : "";
+                        })()
+                      : draft.expirationDate && draft.expirationDate.includes("-")
+                      ? draft.expirationDate
+                      : ""
+                  }
+                  onChange={(event) => {
+                    const val = event.target.value;
+                    if (!val) {
+                      updateDraft("expirationDate", "");
+                    } else {
+                      const [y, m, d] = val.split("-");
+                      updateDraft("expirationDate", `${m}/${d}/${y}`);
+                    }
+                  }}
+                />
               </label>
               <label className="check">
                 <input
@@ -772,6 +1167,68 @@ function ProductsView({
                   onChange={(event) => updateDraft("featured", event.target.checked)}
                 />
                 Featured product
+              </label>
+              <label>
+                SC/PWD Eligibility
+                <select value={draft.scPwdEligibility} onChange={(event) => updateDraft("scPwdEligibility", event.target.value as Product["scPwdEligibility"])}>
+                  <option value="medicine">Medicine</option>
+                  <option value="non-medicine">Non-medicine</option>
+                  <option value="excluded">Excluded</option>
+                </select>
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(draft.vatExempt)}
+                  onChange={(event) => updateDraft("vatExempt", event.target.checked)}
+                />
+                VAT Exempt
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(draft.isPrescription)}
+                  onChange={(event) => updateDraft("isPrescription", event.target.checked)}
+                />
+                Prescription Required
+              </label>
+              <label>
+                Drug Classification
+                <select
+                  value={draft.drugClassification}
+                  onChange={(event) => updateDraft("drugClassification", event.target.value as Product["drugClassification"])}
+                  required
+                >
+                  <option value="DD, Rx">DD, Rx</option>
+                  <option value="EDD, Rx">EDD, Rx</option>
+                  <option value="Rx">Rx</option>
+                  <option value="Pharmacist-Only OTC">Pharmacist-Only OTC</option>
+                  <option value="Non-Rx OTC">Non-Rx OTC</option>
+                </select>
+              </label>
+              <label>
+                Generic Name
+                <input value={draft.genericName} onChange={(event) => updateDraft("genericName", event.target.value)} />
+              </label>
+              <label>
+                Brand Name
+                <input value={draft.brandName} onChange={(event) => updateDraft("brandName", event.target.value)} />
+              </label>
+              <label>
+                Active Ingredient / Salt
+                <input value={draft.activeIngredient} onChange={(event) => updateDraft("activeIngredient", event.target.value)} />
+              </label>
+              <label>
+                Dosage Strength
+                <input value={draft.dosageStrength} onChange={(event) => updateDraft("dosageStrength", event.target.value)} />
+              </label>
+              <label>
+                Dosage Form
+                <input value={draft.dosageForm} onChange={(event) => updateDraft("dosageForm", event.target.value)} />
+              </label>
+              <label>
+                FDA CPR Number
+                <input value={draft.fdaCprNumber} onChange={(event) => updateDraft("fdaCprNumber", event.target.value)} />
               </label>
             </div>
             <div className="product-editor-actions">
@@ -795,37 +1252,113 @@ function CustomersView({
   save: ReturnType<typeof usePosStore>["saveEntity"];
   remove: ReturnType<typeof usePosStore>["removeEntity"];
 }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<CustomerSortKey>("newest");
+
+  const sortedCustomers = useMemo(() => {
+    const list = [...customers];
+    if (sortKey === "alphabetical") {
+      return list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [customers, sortKey]);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = readForm(event.currentTarget);
-    await save("customers", { id: crypto.randomUUID(), name: data.name, phone: data.phone, email: data.email }, "customer");
+    await save(
+      "customers",
+      {
+        id: crypto.randomUUID(),
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        createdAt: new Date().toISOString()
+      },
+      "customer"
+    );
+    setModalOpen(false);
     event.currentTarget.reset();
   }
 
   return (
-    <section className="admin-layout">
-      <form className="panel form-grid" onSubmit={submit}>
-        <h2>Add customer</h2>
-        <input name="name" required placeholder="Name" />
-        <input name="phone" placeholder="Phone" />
-        <input name="email" placeholder="Email" />
-        <button className="primary">Save customer</button>
-      </form>
-      <DataPanel title="Customers">
-        {customers.map((customer) => (
+    <section className="customers-admin panel">
+      <div className="customers-admin-head">
+        <div>
+          <h2>Customers</h2>
+          <p>Manage your customer database and view contact information.</p>
+        </div>
+        <div className="customers-admin-actions">
+          <select
+            className="sort-select"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as CustomerSortKey)}
+            aria-label="Sort customers"
+          >
+            <option value="newest">Newest to Oldest</option>
+            <option value="alphabetical">Alphabetical</option>
+          </select>
+          <button type="button" className="primary" onClick={() => setModalOpen(true)}>
+            Add
+          </button>
+        </div>
+      </div>
+
+      <div className="customers-list">
+        {sortedCustomers.length === 0 ? <p className="empty">No customers found.</p> : null}
+        {sortedCustomers.map((customer) => (
           <article className="data-row" key={customer.id}>
             <strong>{customer.name}</strong>
             <span>{customer.phone || "No phone"}</span>
             <span>{customer.email || "No email"}</span>
             {customer.id !== "walk-in" ? (
-              <button className="danger" onClick={() => remove("customers", customer.id, "customer")}>Delete</button>
+              <button className="danger" onClick={() => remove("customers", customer.id, "customer")}>
+                Delete
+              </button>
             ) : null}
           </article>
         ))}
-      </DataPanel>
+      </div>
+
+      {modalOpen ? (
+        <section className="product-editor-shell">
+          <form className="panel product-editor" onSubmit={submit}>
+            <div className="product-editor-head">
+              <div>
+                <h3>Add</h3>
+                <p>Register a new customer to track their purchase history.</p>
+              </div>
+              <button type="button" onClick={() => setModalOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="form-grid">
+              <label className="input-label">
+                Name
+                <input name="name" required placeholder="Full Name" />
+              </label>
+              <label className="input-label">
+                Phone
+                <input name="phone" placeholder="+63 900 000 0000" />
+              </label>
+              <label className="input-label">
+                Email
+                <input name="email" type="email" placeholder="email@example.com" />
+              </label>
+            </div>
+            <div className="product-editor-actions">
+              <button type="submit" className="primary">
+                Save Customer
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
     </section>
   );
 }
+
+type SettingsTab = "store" | "categories" | "users" | "bir" | "printer" | "prescriptions";
 
 function SettingsView({
   settings,
@@ -833,7 +1366,9 @@ function SettingsView({
   users,
   save,
   remove,
-  reset
+  reset,
+  rxSettings,
+  updateRxSettings
 }: {
   settings: Settings;
   categories: Category[];
@@ -841,7 +1376,11 @@ function SettingsView({
   save: ReturnType<typeof usePosStore>["saveEntity"];
   remove: ReturnType<typeof usePosStore>["removeEntity"];
   reset: ReturnType<typeof usePosStore>["resetData"];
+  rxSettings: ReturnType<typeof usePosStore>["rxSettings"];
+  updateRxSettings: ReturnType<typeof usePosStore>["updateRxSettings"];
 }) {
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("store");
+
   async function submitSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = readForm(event.currentTarget);
@@ -857,7 +1396,8 @@ function SettingsView({
         vatPercentage: Number(data.vatPercentage),
         chargeTax: data.chargeTax === "on",
         quickBilling: data.quickBilling === "on",
-        receiptFooter: data.receiptFooter
+        receiptFooter: data.receiptFooter,
+        expiryAlertDays: Math.max(1, Math.min(365, Number(data.expiryAlertDays) || 30))
       },
       "settings"
     );
@@ -896,62 +1436,174 @@ function SettingsView({
 
   return (
     <section className="settings-page">
-      <section className="panel settings-panel">
-        <form className="form-grid" onSubmit={submitSettings}>
-          <h2>Store settings</h2>
-          <input name="store" defaultValue={settings.store} />
-          <input name="addressOne" defaultValue={settings.addressOne} />
-          <input name="addressTwo" defaultValue={settings.addressTwo} />
-          <input name="contact" defaultValue={settings.contact} />
-          <input name="currencySymbol" defaultValue={settings.currencySymbol} maxLength={3} />
-          <input name="vatPercentage" type="number" defaultValue={settings.vatPercentage} />
-          <label className="check"><input name="chargeTax" type="checkbox" defaultChecked={settings.chargeTax} /> Charge VAT</label>
-          <label className="check"><input name="quickBilling" type="checkbox" defaultChecked={settings.quickBilling} /> Quick billing</label>
-          <textarea name="receiptFooter" defaultValue={settings.receiptFooter} />
-          <button className="primary">Save settings</button>
-          <button type="button" onClick={reset}>Reset seeded prototype data</button>
-        </form>
-      </section>
+      <div className="settings-tabs">
+        <div className="segmented">
+          <button
+            type="button"
+            className={settingsTab === "store" ? "active" : ""}
+            onClick={() => setSettingsTab("store")}
+          >
+            Store
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "categories" ? "active" : ""}
+            onClick={() => setSettingsTab("categories")}
+          >
+            Categories
+            <span className="tab-badge">{categories.length}</span>
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "users" ? "active" : ""}
+            onClick={() => setSettingsTab("users")}
+          >
+            Users
+            <span className="tab-badge">{users.length}</span>
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "bir" ? "active" : ""}
+            onClick={() => setSettingsTab("bir")}
+          >
+            BIR
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "printer" ? "active" : ""}
+            onClick={() => setSettingsTab("printer")}
+          >
+            Printer
+          </button>
+          <button
+            type="button"
+            className={settingsTab === "prescriptions" ? "active" : ""}
+            onClick={() => setSettingsTab("prescriptions")}
+          >
+            Prescriptions
+          </button>
+        </div>
+      </div>
 
-      <section className="settings-subgrid">
-        <form className="panel form-grid" onSubmit={submitCategory}>
-          <h2>Add category</h2>
-          <input name="name" required placeholder="Category name" />
-          <button className="primary">Save category</button>
-        </form>
-        <DataPanel title="Categories">
-          {categories.map((category) => (
-            <article className="data-row" key={category.id}>
-              <strong>{category.name}</strong>
-              <button onClick={() => save("categories", { ...category, name: `${category.name}*` }, "category")}>Mark edited</button>
-              <button className="danger" onClick={() => remove("categories", category.id, "category")}>Delete</button>
-            </article>
-          ))}
-        </DataPanel>
-      </section>
+      {settingsTab === "store" ? (
+        <section className="panel settings-panel">
+          <form className="form-grid" onSubmit={submitSettings}>
+            <h2>Store settings</h2>
+            <label className="input-label">
+              Store name
+              <input name="store" defaultValue={settings.store} />
+            </label>
+            <label className="input-label">
+              Address line 1
+              <input name="addressOne" defaultValue={settings.addressOne} />
+            </label>
+            <label className="input-label">
+              Address line 2
+              <input name="addressTwo" defaultValue={settings.addressTwo} />
+            </label>
+            <label className="input-label">
+              Contact
+              <input name="contact" defaultValue={settings.contact} />
+            </label>
+            <label className="input-label">
+              Currency symbol
+              <input name="currencySymbol" defaultValue={settings.currencySymbol} maxLength={3} />
+            </label>
+            <label className="input-label">
+              VAT percentage
+              <input name="vatPercentage" type="number" defaultValue={settings.vatPercentage} />
+            </label>
+            <label className="check">
+              <input name="chargeTax" type="checkbox" defaultChecked={settings.chargeTax} /> Charge VAT
+            </label>
+            <label className="check">
+              <input name="quickBilling" type="checkbox" defaultChecked={settings.quickBilling} /> Quick billing
+            </label>
+            <label className="input-label">
+              Expiry alert threshold (days)
+              <input name="expiryAlertDays" type="number" min="1" max="365" defaultValue={settings.expiryAlertDays ?? 30} />
+            </label>
+            <label className="input-label">
+              Receipt footer
+              <textarea name="receiptFooter" defaultValue={settings.receiptFooter} />
+            </label>
+            <div className="settings-actions">
+              <button className="primary">Save settings</button>
+              <button type="button" onClick={reset}>Reset prototype data</button>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
-      <section className="settings-subgrid">
-        <form className="panel form-grid" onSubmit={submitUser}>
-          <h2>Add user</h2>
-          <input name="username" required placeholder="Username" />
-          <input name="fullname" required placeholder="Full name" />
-          <select name="role">
-            <option value="cashier">Cashier</option>
-            <option value="admin">Admin</option>
-          </select>
-          <button className="primary">Save user</button>
-        </form>
-        <DataPanel title="Users">
-          {users.map((user) => (
-            <article className="data-row" key={user.id}>
-              <strong>{user.fullname}</strong>
-              <span>{user.username}</span>
-              <span>{user.role}</span>
-              {user.id !== "usr-admin" ? <button className="danger" onClick={() => remove("users", user.id, "user")}>Delete</button> : null}
-            </article>
-          ))}
-        </DataPanel>
-      </section>
+      {settingsTab === "categories" ? (
+        <section className="settings-tab-content">
+          <div className="settings-subgrid">
+            <form className="panel form-grid" onSubmit={submitCategory}>
+              <h2>Add category</h2>
+              <label className="input-label">
+                Category name
+                <input name="name" required placeholder="e.g. Vitamins" />
+              </label>
+              <button className="primary">Save category</button>
+            </form>
+            <DataPanel title={`Categories (${categories.length})`}>
+              {categories.length === 0 ? <p className="empty">No categories yet.</p> : null}
+              {categories.map((category) => (
+                <article className="data-row" key={category.id}>
+                  <strong>{category.name}</strong>
+                  <button onClick={() => save("categories", { ...category, name: `${category.name}*` }, "category")}>Mark edited</button>
+                  <button className="danger" onClick={() => remove("categories", category.id, "category")}>Delete</button>
+                </article>
+              ))}
+            </DataPanel>
+          </div>
+        </section>
+      ) : null}
+
+      {settingsTab === "users" ? (
+        <section className="settings-tab-content">
+          <div className="settings-subgrid">
+            <form className="panel form-grid" onSubmit={submitUser}>
+              <h2>Add user</h2>
+              <label className="input-label">
+                Username
+                <input name="username" required placeholder="e.g. jsmith" />
+              </label>
+              <label className="input-label">
+                Full name
+                <input name="fullname" required placeholder="e.g. Jane Smith" />
+              </label>
+              <label className="input-label">
+                Role
+                <select name="role">
+                  <option value="cashier">Cashier</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+              <button className="primary">Save user</button>
+            </form>
+            <DataPanel title={`Users (${users.length})`}>
+              {users.map((user) => (
+                <article className="data-row" key={user.id}>
+                  <strong>{user.fullname}</strong>
+                  <span>{user.username}</span>
+                  <span className="role-badge">{user.role}</span>
+                  {user.id !== "usr-admin" ? <button className="danger" onClick={() => remove("users", user.id, "user")}>Delete</button> : null}
+                </article>
+              ))}
+            </DataPanel>
+          </div>
+        </section>
+      ) : null}
+      {settingsTab === "bir" ? (
+        <BirSettingsPanel />
+      ) : null}
+      {settingsTab === "printer" ? (
+        <PrinterSettingsPanel />
+      ) : null}
+      {settingsTab === "prescriptions" ? (
+        <PrescriptionSettingsPanel settings={rxSettings} onUpdate={updateRxSettings} />
+      ) : null}
     </section>
   );
 }
@@ -960,34 +1612,107 @@ function ReportsView({
   transactions,
   products,
   customers,
+  categories,
   symbol,
-  dailySales
+  dailySales,
+  alertDays,
+  scPwdTransactionLog,
+  getScPwdSummary,
+  scPwdAlerts
 }: {
   transactions: ReturnType<typeof usePosStore>["transactions"];
   products: Product[];
   customers: Customer[];
+  categories: Category[];
   symbol: string;
   dailySales: ReturnType<typeof usePosStore>["transactions"];
+  alertDays: number;
+  scPwdTransactionLog: ReturnType<typeof usePosStore>["scPwdTransactionLog"];
+  getScPwdSummary: ReturnType<typeof usePosStore>["getScPwdSummary"];
+  scPwdAlerts: ReturnType<typeof usePosStore>["scPwdAlerts"];
 }) {
+  const [reportsTab, setReportsTab] = useState<"overview" | "bir" | "audit" | "sc-pwd">("overview");
   const totalSales = transactions.reduce((sum, transaction) => sum + transaction.total, 0);
   const lowStock = products.filter(isLowStock);
+  const nearExpiry = [...products.filter((p) => !isExpired(p) && isNearExpiry(p, alertDays))].sort(
+    (a, b) => (daysUntilExpiry(a) ?? 0) - (daysUntilExpiry(b) ?? 0)
+  );
+  const expired = [...products.filter(isExpired)].sort((a, b) => (daysUntilExpiry(a) ?? 0) - (daysUntilExpiry(b) ?? 0));
+
+  const categoryMap = useMemo(
+    () => Object.fromEntries(categories.map((category) => [category.id, category.name])),
+    [categories]
+  );
 
   return (
-    <section className="reports-grid">
+    <section className="reports-page">
+      <div className="settings-tabs">
+        <div className="segmented">
+          <button type="button" className={reportsTab === "overview" ? "active" : ""} onClick={() => setReportsTab("overview")}>
+            Overview
+          </button>
+          <button type="button" className={reportsTab === "bir" ? "active" : ""} onClick={() => setReportsTab("bir")}>
+            BIR Reports
+          </button>
+          <button type="button" className={reportsTab === "audit" ? "active" : ""} onClick={() => setReportsTab("audit")}>
+            Audit Trail
+          </button>
+          <button type="button" className={reportsTab === "sc-pwd" ? "active" : ""} onClick={() => setReportsTab("sc-pwd")}>
+            SC/PWD
+          </button>
+        </div>
+      </div>
+
+      {reportsTab === "overview" ? (
+      <section className="reports-grid">
       <DataPanel title="Summary">
         <article className="metric"><span>Total sales</span><strong>{formatCurrency(symbol, totalSales)}</strong></article>
         <article className="metric"><span>Transactions</span><strong>{transactions.length}</strong></article>
         <article className="metric"><span>Today</span><strong>{formatCurrency(symbol, dailySales.reduce((sum, sale) => sum + sale.total, 0))}</strong></article>
         <article className="metric"><span>Customers</span><strong>{customers.length}</strong></article>
       </DataPanel>
-      <DataPanel title="Low stock">
-        {lowStock.map((product) => (
-          <article className="data-row" key={product.id}>
+
+      <DataPanel title={`Expired (${expired.length})`}>
+        {expired.length === 0 ? <p className="empty">No expired products.</p> : null}
+        {expired.map((product) => (
+          <article className="data-row alert-row" key={product.id}>
             <strong>{product.name}</strong>
-            <span>{product.quantity} left</span>
+            <span>SKU {product.barcode}</span>
+            <span>{categoryMap[product.categoryId] || "Uncategorized"}</span>
+            <span className="expiry-badge expired">Expired</span>
+            <span>{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
+            <span>{formatCurrency(symbol, product.price)}</span>
           </article>
         ))}
       </DataPanel>
+
+      <DataPanel title={`Near expiry (${nearExpiry.length})`}>
+        {nearExpiry.length === 0 ? <p className="empty">No near-expiry products.</p> : null}
+        {nearExpiry.map((product) => (
+          <article className="data-row alert-row" key={product.id}>
+            <strong>{product.name}</strong>
+            <span>SKU {product.barcode}</span>
+            <span>{categoryMap[product.categoryId] || "Uncategorized"}</span>
+            <span className="expiry-badge near">{daysUntilExpiry(product)}d left</span>
+            <span>{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
+            <span>{formatCurrency(symbol, product.price)}</span>
+          </article>
+        ))}
+      </DataPanel>
+
+      <DataPanel title={`Low stock (${lowStock.length})`}>
+        {lowStock.length === 0 ? <p className="empty">No low-stock products.</p> : null}
+        {lowStock.map((product) => (
+          <article className="data-row alert-row" key={product.id}>
+            <strong>{product.name}</strong>
+            <span>SKU {product.barcode}</span>
+            <span>{categoryMap[product.categoryId] || "Uncategorized"}</span>
+            <span className="quantity-low">{product.quantity} left</span>
+            <span>{formatCurrency(symbol, product.price)}</span>
+          </article>
+        ))}
+      </DataPanel>
+
       <DataPanel title="Recent transactions">
         {transactions.slice(0, 10).map((transaction) => (
           <article className="data-row" key={transaction.id}>
@@ -998,6 +1723,24 @@ function ReportsView({
           </article>
         ))}
       </DataPanel>
+    </section>
+      ) : null}
+      {reportsTab === "bir" ? (
+        <BirReportsPanel
+          scPwdTransactionLog={scPwdTransactionLog}
+          getScPwdSummary={getScPwdSummary}
+          scPwdAlerts={scPwdAlerts}
+        />
+      ) : null}
+      {reportsTab === "audit" ? (
+        <AuditTrailPanel />
+      ) : null}
+      {reportsTab === "sc-pwd" ? (
+        <section className="reports-grid">
+          <ScpwdSummaryCardComponent summary={getScPwdSummary()} />
+          <ScpwdTransactionLog rows={scPwdTransactionLog} />
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -1023,11 +1766,11 @@ function SyncView({
     <section className="panel">
       <div className="sync-head">
         <div>
-          <h2>Sync queue</h2>
-          <p>{online ? "Network available. Sync is simulated for this prototype." : "Offline. Local changes are queued."}</p>
+          <h2>Sync Online queue</h2>
+          <p>{online ? "Network available. Sync Online is simulated for this prototype." : "Offline. Local changes are queued."}</p>
         </div>
         <button className="primary" onClick={syncNow} disabled={syncing || queue.every((item) => item.status !== "pending")}>
-          {syncing ? "Syncing..." : "Sync now"}
+          {syncing ? "Syncing..." : "Sync Online now"}
         </button>
       </div>
       <div className="sync-list">
@@ -1044,7 +1787,7 @@ function SyncView({
       <hr />
       <h3>Observability</h3>
       <div className="reports-grid">
-        <article className="metric"><span>Sync lag</span><strong>{snapshot.syncLagSeconds}s</strong></article>
+        <article className="metric"><span>Sync Online lag</span><strong>{snapshot.syncLagSeconds}s</strong></article>
         <article className="metric"><span>Queue depth</span><strong>{snapshot.queueDepth}</strong></article>
         <article className="metric"><span>Failed mutations (15m)</span><strong>{snapshot.failedMutations15m}</strong></article>
         <article className="metric"><span>Payment failure rate (15m)</span><strong>{(snapshot.paymentFailureRate15m * 100).toFixed(1)}%</strong></article>

@@ -138,7 +138,7 @@ describe("PosPrototype products admin view", () => {
       target: { value: "Paracetamol" }
     });
 
-    expect(screen.getAllByTestId("product-row")).toHaveLength(3);
+    expect(screen.getAllByTestId("product-row")).toHaveLength(2);
 
     fireEvent.change(screen.getByLabelText("Property"), {
       target: { value: "category" }
@@ -156,6 +156,36 @@ describe("PosPrototype products admin view", () => {
     const firstRow = screen.getAllByTestId("product-row")[0];
     expect((within(firstRow).getByText("$6.00") as HTMLElement).className).toContain("price-original");
     expect((within(firstRow).getByText("2") as HTMLElement).className).toContain("quantity-low");
+  });
+
+  it("sorts title and category alphabetically, and price and quantity in both directions", () => {
+    renderProductsView();
+
+    const getFirstRowTitle = () =>
+      within(screen.getAllByTestId("product-row")[0]).getByText(/.+/, { selector: ".product-title strong" }).textContent;
+    const getFirstRowCategory = () => within(screen.getAllByTestId("product-row")[0]).getByText(/Aid|Flu|Relief|Vitamins/).textContent;
+    const getFirstRowPrice = () =>
+      within(screen.getAllByTestId("product-row")[0]).getByText(/\$/, { selector: ".product-price" }).textContent;
+    const getFirstRowQuantity = () =>
+      within(screen.getAllByTestId("product-row")[0]).getByText(/^\d+$/, { selector: ".quantity-low, .quantity-ok" }).textContent;
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by title" }));
+    expect(getFirstRowTitle()).toContain("Amoxicillin 500mg");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by category" }));
+    expect(getFirstRowCategory()).toBe("Cold & Flu");
+    fireEvent.click(screen.getByRole("button", { name: "Sort by category" }));
+    expect(getFirstRowCategory()).toBe("Vitamins");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by price" }));
+    expect(getFirstRowPrice()).toBe("$3.20");
+    fireEvent.click(screen.getByRole("button", { name: "Sort by price" }));
+    expect(Number(getFirstRowPrice()?.replace("$", ""))).toBeGreaterThan(15);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by quantity" }));
+    expect(getFirstRowQuantity()).toBe("2");
+    fireEvent.click(screen.getByRole("button", { name: "Sort by quantity" }));
+    expect(Number(getFirstRowQuantity())).toBeGreaterThan(50);
   });
 
   it("toggles featured state, opens edit mode, and deletes a product", () => {

@@ -20,7 +20,7 @@ import type {
 } from "./types";
 
 const DB_NAME = "pharmaspot-web-prototype";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export type StoreName =
   | "meta"
@@ -75,6 +75,24 @@ function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number
     const metaStore = tx.objectStore("meta");
     metaStore.put({ id: "featureFlags", value: DEFAULT_FEATURE_FLAGS });
     metaStore.put({ id: "schemaVersion", value: 2 });
+  }
+
+  // V3: backfill expiryAlertDays default on existing settings.
+  if (oldVersion < 3) {
+    const settingsStore = tx.objectStore("settings");
+    const cursor = settingsStore.openCursor();
+    cursor.onsuccess = (event) => {
+      const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
+      if (result) {
+        const value = result.value as Settings;
+        if (typeof value.expiryAlertDays !== "number") {
+          value.expiryAlertDays = 30;
+          settingsStore.put(value);
+        }
+        result.continue();
+      }
+    };
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 3 });
   }
 }
 

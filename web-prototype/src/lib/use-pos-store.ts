@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { calculateCartTotals, calculateChange, decrementStock, makeLocalNumber, money } from "./calculations";
+import {
+  buildScPwdCartItems,
+  calculateCartTotals,
+  calculateChange,
+  calculateScPwdTotals,
+  decrementStock,
+  makeLocalNumber,
+  money
+} from "./calculations";
 import { DEFAULT_FEATURE_FLAGS, type FeatureFlags } from "./feature-flags";
 import {
   deleteOne,
@@ -32,7 +40,18 @@ import type {
   HeldOrder,
   PaymentMethod,
   PaymentStatus,
+  PrescriptionDraft,
+  PrescriptionRefusal,
   Product,
+  RxInspectionSnapshot,
+  RxPharmacist,
+  RxRedFlag,
+  RxSettings,
+  ScPwdAlert,
+  ScPwdCustomerDetails,
+  ScPwdSettings,
+  ScPwdSummaryCard,
+  ScPwdTransactionLogRow,
   Settings,
   SyncQueueItem,
   Transaction,
@@ -61,7 +80,12 @@ export function usePosStore() {
   const [syncQueue, setSyncQueue] = useState<SyncQueueItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState(0);
+  const [remarks, setRemarks] = useState("");
   const [customerId, setCustomerId] = useState("walk-in");
+  const [scPwdDraft, setScPwdDraft] = useState<ScPwdCustomerDetails | null>(null);
+  const [activeScPwdDiscount, setActiveScPwdDiscount] = useState(false);
+  const [scPwdTransactionLog, setScPwdTransactionLog] = useState<ScPwdTransactionLogRow[]>([]);
+  const [scPwdAlerts, setScPwdAlerts] = useState<ScPwdAlert[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [forcedOffline, setForcedOffline] = useState(false);
   const [browserOnline, setBrowserOnline] = useState(true);
@@ -71,6 +95,27 @@ export function usePosStore() {
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
   const [offlineStartedAt, setOfflineStartedAt] = useState<string | null>(null);
   const [offlineSecondsTotal, setOfflineSecondsTotal] = useState(0);
+  const [rxPharmacists, setRxPharmacists] = useState<RxPharmacist[]>([
+    { id: "rx-pharm-1", name: "Rina Dela Cruz", prcNumber: "PRC-1263901", role: "pharmacist" },
+    { id: "rx-pharm-2", name: "Miguel Santos", prcNumber: "PRC-1130254", role: "pharmacist" },
+    { id: "rx-admin-1", name: "Maria Velasco", prcNumber: "PRC-1028704", role: "admin" }
+  ]);
+  const [rxPrescriptionDrafts, setRxPrescriptionDrafts] = useState<PrescriptionDraft[]>([]);
+  const [rxRedFlags, setRxRedFlags] = useState<RxRedFlag[]>([
+    {
+      id: "rx-flag-1",
+      severity: "warning",
+      title: "Duplicate DD dispensing window",
+      reason: "Same patient received Diazepam 5mg within 30 days.",
+      createdAt: new Date().toISOString()
+    }
+  ]);
+  const [rxRefusals, setRxRefusals] = useState<PrescriptionRefusal[]>([]);
+  const [rxSettings, setRxSettings] = useState<RxSettings>({
+    ddEddLowStockThreshold: 10,
+    profileRetentionYears: 10,
+    hardBlockPrototypeReset: true
+  });
 
   const online = browserOnline && !forcedOffline;
   const pendingSync = useMemo(() => syncQueue.filter((item) => item.status === "pending"), [syncQueue]);
@@ -96,7 +141,7 @@ export function usePosStore() {
 
     setProducts(nextProducts);
     setCategories(nextCategories);
-    setCustomers(nextCustomers);
+    setCustomers(nextCustomers.map((c: Customer) => ({ ...c, createdAt: c.createdAt ?? new Date(0).toISOString() })));
     setUsers(nextUsers);
     setSettings(nextSettings || null);
     setTransactions(nextTransactions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
@@ -156,10 +201,19 @@ export function usePosStore() {
     }
   }, [browserOnline, forcedOffline, offlineStartedAt, online, recordEvent]);
 
-  const totals = useMemo(
-    () => calculateCartTotals(cart, settings || { chargeTax: false, vatPercentage: 0 }, discount),
-    [cart, discount, settings]
-  );
+  const totals = useMemo(() => {
+    const scPwdSettings = settings?.scPwdSettings;
+    if (activeScPwdDiscount && scPwdSettings?.enabled) {
+      const scPwdTotals = calculateScPwdTotals(cart, products, settings!, discount, scPwdSettings);
+      const processedCart = buildScPwdCartItems(cart, products, settings!, scPwdSettings, discount);
+      return calculateCartTotals(
+        processedCart,
+        settings || { chargeTax: false, vatPercentage: 0 },
+        scPwdTotals.manualDiscount
+      );
+    }
+    return calculateCartTotals(cart, settings || { chargeTax: false, vatPercentage: 0 }, discount);
+  }, [cart, discount, settings, activeScPwdDiscount, products]);
 
   const addToCart = useCallback((product: Product) => {
     if (product.tracksStock && product.quantity <= 0) return;
@@ -198,7 +252,10 @@ export function usePosStore() {
   const clearCart = useCallback(() => {
     setCart([]);
     setDiscount(0);
+    setRemarks("");
     setCustomerId("walk-in");
+    setScPwdDraft(null);
+    setActiveScPwdDiscount(false);
   }, []);
 
   const completeSale = useCallback(
@@ -206,12 +263,21 @@ export function usePosStore() {
       if (!settings || !currentUser || cart.length === 0) return null;
       if (!featureFlags.payments) return null;
       return traced("pos.complete_sale", { paymentMethod: input.method, cartLines: cart.length }, async () => {
-        const saleTotals = calculateCartTotals(cart, settings, discount);
+        const scPwdSettings = settings.scPwdSettings;
+        const isScPwdActive = activeScPwdDiscount && scPwdSettings?.enabled;
+        const processedCart = isScPwdActive
+          ? buildScPwdCartItems(cart, products, settings, scPwdSettings, discount)
+          : cart;
+        const saleTotals = calculateCartTotals(
+          processedCart,
+          settings,
+          isScPwdActive ? 0 : discount
+        );
         const paid = input.method === "cash" ? input.paid : saleTotals.total;
         const transaction: Transaction = {
           id: crypto.randomUUID(),
           localNumber: makeLocalNumber(),
-          items: cart.map((item) => ({ ...item, lineTotal: money(item.price * item.quantity) })),
+          items: processedCart.map((item) => ({ ...item, lineTotal: money(item.price * item.quantity) })),
           customerId,
           cashierId: currentUser.id,
           createdAt: new Date().toISOString(),
@@ -224,11 +290,46 @@ export function usePosStore() {
           paymentMethod: input.method,
           paymentStatus: input.paymentStatus,
           paymentReference: input.reference.trim(),
-          syncStatus: "pending"
+          syncStatus: "pending",
+          remarks: remarks.trim(),
+          scPwdMetadata: isScPwdActive && scPwdDraft
+            ? {
+                ...scPwdDraft,
+                scPwdDiscountAmount: saleTotals.discount,
+                scPwdVatRemoved: 0
+              }
+            : undefined
         };
 
         recordEvent({ type: "payment_attempt", details: { status: input.paymentStatus, method: input.method, total: saleTotals.total } });
-        const updatedProducts = decrementStock(products, cart);
+        if (isScPwdActive && scPwdDraft) {
+          const row: ScPwdTransactionLogRow = {
+            id: crypto.randomUUID(),
+            transactionId: transaction.id,
+            orNumber: transaction.localNumber,
+            timestamp: transaction.createdAt,
+            discountType: scPwdDraft.chosenDiscount ?? scPwdDraft.discountType,
+            customerName: scPwdDraft.fullName,
+            idNumber: scPwdDraft.idNumber,
+            grossAmount: saleTotals.subtotal,
+            scPwdDiscountAmount: saleTotals.discount,
+            vatRemoved: transaction.scPwdMetadata?.scPwdVatRemoved ?? 0,
+            netAmount: saleTotals.total,
+            items: processedCart
+              .filter((i) => i.scPwdDiscounted)
+              .map((i) => ({
+                name: i.productName,
+                qty: i.quantity,
+                originalPrice: i.originalPrice ?? i.price,
+                discountAmount: i.scPwdDiscountAmount ?? 0,
+                finalPrice: i.price
+              })),
+            proxyPurchase: scPwdDraft.proxyPurchase,
+            supervisorOverride: transaction.scPwdMetadata?.supervisorOverride
+          };
+          setScPwdTransactionLog((prev) => [...prev, row]);
+        }
+        const updatedProducts = decrementStock(products, processedCart);
         await putMany("products", updatedProducts);
         await putOne("transactions", transaction);
         await enqueueSync({ entity: "transaction", operation: "create", payload: transaction });
@@ -253,7 +354,7 @@ export function usePosStore() {
         throw error;
       });
     },
-    [cart, clearCart, currentUser, customerId, discount, featureFlags.payments, products, recordEvent, refresh, settings]
+    [activeScPwdDiscount, cart, clearCart, currentUser, customerId, discount, featureFlags.payments, products, recordEvent, refresh, remarks, scPwdDraft, settings]
   );
 
   const holdOrder = useCallback(
@@ -265,7 +366,10 @@ export function usePosStore() {
         items: cart,
         customerId,
         discount,
-        createdAt: new Date().toISOString()
+        remarks: remarks.trim(),
+        createdAt: new Date().toISOString(),
+        scPwdDiscountActive: activeScPwdDiscount,
+        scPwdDraft: scPwdDraft ?? undefined
       };
       await putOne("heldOrders", order);
       await enqueueSync({ entity: "held-order", operation: "create", payload: order });
@@ -273,7 +377,7 @@ export function usePosStore() {
       await refresh();
       return order;
     },
-    [cart, clearCart, customerId, discount, heldOrders.length, refresh]
+    [activeScPwdDiscount, cart, clearCart, customerId, discount, heldOrders.length, refresh, remarks, scPwdDraft]
   );
 
   const resumeHeldOrder = useCallback(
@@ -281,6 +385,9 @@ export function usePosStore() {
       setCart(order.items);
       setCustomerId(order.customerId);
       setDiscount(order.discount);
+      setRemarks(order.remarks || "");
+      setActiveScPwdDiscount(order.scPwdDiscountActive ?? false);
+      setScPwdDraft(order.scPwdDraft ?? null);
       await deleteOne("heldOrders", order.id);
       await enqueueSync({ entity: "held-order", operation: "delete", payload: order });
       await refresh();
@@ -328,6 +435,77 @@ export function usePosStore() {
     setSyncing(false);
   }, [featureFlags.sync, pendingSync.length, recordEvent, refresh]);
 
+  const applyScPwdDiscount = useCallback(
+    (details: ScPwdCustomerDetails) => {
+      setScPwdDraft(details);
+      setActiveScPwdDiscount(true);
+      setDiscount(0); // prevent double discount
+      recordEvent({ type: "scpwd_applied", details: { discountType: details.discountType, idNumber: details.idNumber } });
+    },
+    [recordEvent]
+  );
+
+  const removeScPwdDiscount = useCallback(
+    (overrideBy?: string, overrideReason?: string) => {
+      setScPwdDraft((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          supervisorOverride: Boolean(overrideBy),
+          overrideBy,
+          overrideReason
+        };
+      });
+      setActiveScPwdDiscount(false);
+      recordEvent({ type: "scpwd_removed", details: { overrideBy, overrideReason } });
+    },
+    [recordEvent]
+  );
+
+  const validateScPwdEligibility = useCallback(
+    (idNumber: string, scPwdSettings: ScPwdSettings): { valid: boolean; warning?: string } => {
+      const today = new Date().toISOString().slice(0, 10);
+      const sameDayUses = scPwdTransactionLog.filter(
+        (row) => row.idNumber === idNumber && row.timestamp.startsWith(today)
+      ).length;
+      if (sameDayUses >= scPwdSettings.dailyAlertThreshold) {
+        return { valid: true, warning: `ID ${idNumber} has been used ${sameDayUses} times today. Daily threshold exceeded.` };
+      }
+      if (sameDayUses >= scPwdSettings.duplicateIdThreshold) {
+        return { valid: true, warning: `ID ${idNumber} used ${sameDayUses} times today.` };
+      }
+      return { valid: true };
+    },
+    [scPwdTransactionLog]
+  );
+
+  const getScPwdSummary = useCallback(
+    (month?: string): ScPwdSummaryCard => {
+      const targetMonth = month ?? new Date().toISOString().slice(0, 7);
+      const monthRows = scPwdTransactionLog.filter((row) => row.timestamp.startsWith(targetMonth));
+      const scRows = monthRows.filter((r) => r.discountType === "sc");
+      const pwdRows = monthRows.filter((r) => r.discountType === "pwd");
+      return {
+        totalTransactions: monthRows.length,
+        totalScTransactions: scRows.length,
+        totalPwdTransactions: pwdRows.length,
+        totalScDiscount: scRows.reduce((sum, r) => sum + r.scPwdDiscountAmount, 0),
+        totalPwdDiscount: pwdRows.reduce((sum, r) => sum + r.scPwdDiscountAmount, 0),
+        totalVatRemoved: monthRows.reduce((sum, r) => sum + r.vatRemoved, 0),
+        totalDeductibles: monthRows.reduce((sum, r) => sum + r.scPwdDiscountAmount + r.vatRemoved, 0),
+        month: targetMonth
+      };
+    },
+    [scPwdTransactionLog]
+  );
+
+  const acknowledgeScPwdAlert = useCallback(
+    (id: string) => {
+      setScPwdAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, acknowledged: true } : a)));
+    },
+    []
+  );
+
   const refundTransaction = useCallback(
     async (transactionId: string, reason: string) => {
       if (!featureFlags.refunds) return null;
@@ -354,6 +532,8 @@ export function usePosStore() {
     await resetPrototypeData();
     clearCart();
     setLastReceipt(null);
+    setScPwdTransactionLog([]);
+    setScPwdAlerts([]);
     await refresh();
   }, [clearCart, refresh]);
 
@@ -365,6 +545,47 @@ export function usePosStore() {
     },
     [users]
   );
+
+  const saveRxPrescriptionDraft = useCallback((draft: PrescriptionDraft) => {
+    setRxPrescriptionDrafts((current) => {
+      const found = current.find((item) => item.id === draft.id);
+      if (!found) return [draft, ...current];
+      return current.map((item) => (item.id === draft.id ? draft : item));
+    });
+  }, []);
+
+  const logRxRefusal = useCallback((refusal: PrescriptionRefusal) => {
+    setRxRefusals((current) => [refusal, ...current]);
+  }, []);
+
+  const addRxRedFlag = useCallback((flag: RxRedFlag) => {
+    setRxRedFlags((current) => [flag, ...current]);
+  }, []);
+
+  const clearRxRedFlag = useCallback((id: string) => {
+    setRxRedFlags((current) => current.filter((flag) => flag.id !== id));
+  }, []);
+
+  const getRxInspectionSnapshot = useCallback((): RxInspectionSnapshot => {
+    const today = new Date().toISOString().slice(0, 10);
+    const prescriptionToday = rxPrescriptionDrafts.filter((item) => item.createdAt.startsWith(today));
+    const ddEddToday = prescriptionToday.filter(
+      (item) => item.classAtDispense === "DD, Rx" || item.classAtDispense === "EDD, Rx"
+    );
+    const openPartial = rxPrescriptionDrafts.filter((item) => item.status === "PARTIAL - OPEN");
+    const redFlagsToday = rxRedFlags.filter((item) => item.createdAt.startsWith(today));
+    return {
+      totalRxTransactionsToday: prescriptionToday.length,
+      totalDdEddTransactionsToday: ddEddToday.length,
+      openPartialFills: openPartial.length,
+      redFlagsToday: redFlagsToday.length,
+      ddBalanceAlerts: redFlagsToday.filter((item) => item.title.toLowerCase().includes("balance")).length
+    };
+  }, [rxPrescriptionDrafts, rxRedFlags]);
+
+  const updateRxSettings = useCallback((next: RxSettings) => {
+    setRxSettings(next);
+  }, []);
 
   const observabilitySnapshot: ObservabilitySnapshot = useMemo(() => {
     const activeOfflineSeconds =
@@ -394,6 +615,7 @@ export function usePosStore() {
     syncQueue,
     cart,
     discount,
+    remarks,
     customerId,
     currentUser,
     forcedOffline,
@@ -403,6 +625,7 @@ export function usePosStore() {
     syncing,
     featureFlags,
     setDiscount,
+    setRemarks,
     setCustomerId,
     setForcedOffline,
     setLastReceipt,
@@ -419,8 +642,29 @@ export function usePosStore() {
     refundTransaction,
     resetData,
     login,
+    rxPharmacists,
+    setRxPharmacists,
+    rxPrescriptionDrafts,
+    rxRedFlags,
+    rxRefusals,
+    rxSettings,
+    saveRxPrescriptionDraft,
+    logRxRefusal,
+    addRxRedFlag,
+    clearRxRedFlag,
+    getRxInspectionSnapshot,
+    updateRxSettings,
     observabilitySnapshot,
     sloTargets: defaultSloTargets,
-    activeAlerts
+    activeAlerts,
+    scPwdDraft,
+    activeScPwdDiscount,
+    scPwdTransactionLog,
+    scPwdAlerts,
+    applyScPwdDiscount,
+    removeScPwdDiscount,
+    validateScPwdEligibility,
+    getScPwdSummary,
+    acknowledgeScPwdAlert
   };
 }

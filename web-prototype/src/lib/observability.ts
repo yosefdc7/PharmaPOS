@@ -9,7 +9,9 @@ export type TelemetryEvent = {
     | "mutation_failed"
     | "payment_attempt"
     | "network_state"
-    | "order_completed";
+    | "order_completed"
+    | "scpwd_applied"
+    | "scpwd_removed";
   details: Record<string, unknown>;
 };
 
@@ -150,7 +152,7 @@ export function evaluateAlerts(snapshot: ObservabilitySnapshot, slo: SloTargets 
     alerts.push({
       id: "sync-backlog",
       severity: snapshot.queueDepth > slo.maxQueueDepth * 2 ? "critical" : "warning",
-      summary: `Sync backlog above SLO (depth ${snapshot.queueDepth}, lag ${snapshot.syncLagSeconds}s).`,
+      summary: `Sync Online backlog above SLO (depth ${snapshot.queueDepth}, lag ${snapshot.syncLagSeconds}s).`,
       runbook: "docs/runbooks/sync-backlog.md"
     });
   }

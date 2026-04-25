@@ -1,4 +1,4 @@
-import type { Category, Customer, Product, Settings, SyncQueueItem, Transaction, User } from "./types";
+import type { Category, Customer, Product, ScPwdSettings, Settings, SyncQueueItem, Transaction, User } from "./types";
 
 export const seedCategories: Category[] = [
   { id: "cat-pain", name: "Pain Relief" },
@@ -19,7 +19,10 @@ export const seedProducts: Product[] = [
     minStock: 10,
     tracksStock: true,
     expirationDate: "2027-08-31",
-    imageColor: "#5433FF"
+    imageColor: "#5433FF",
+    scPwdEligibility: "medicine",
+    vatExempt: false,
+    isPrescription: false
   },
   {
     id: "prd-ibu-200",
@@ -32,7 +35,10 @@ export const seedProducts: Product[] = [
     minStock: 8,
     tracksStock: true,
     expirationDate: "2027-05-18",
-    imageColor: "#F6A4EC"
+    imageColor: "#F6A4EC",
+    scPwdEligibility: "medicine",
+    vatExempt: false,
+    isPrescription: false
   },
   {
     id: "prd-cough",
@@ -45,7 +51,10 @@ export const seedProducts: Product[] = [
     minStock: 6,
     tracksStock: true,
     expirationDate: "2026-12-12",
-    imageColor: "#97FBD1"
+    imageColor: "#97FBD1",
+    scPwdEligibility: "medicine",
+    vatExempt: false,
+    isPrescription: false
   },
   {
     id: "prd-vitc",
@@ -58,7 +67,10 @@ export const seedProducts: Product[] = [
     minStock: 10,
     tracksStock: true,
     expirationDate: "2028-01-20",
-    imageColor: "#1CC6FF"
+    imageColor: "#1CC6FF",
+    scPwdEligibility: "non-medicine",
+    vatExempt: true,
+    isPrescription: false
   },
   {
     id: "prd-bandage",
@@ -71,7 +83,50 @@ export const seedProducts: Product[] = [
     minStock: 5,
     tracksStock: true,
     expirationDate: "2029-04-30",
-    imageColor: "#4379FF"
+    imageColor: "#4379FF",
+    scPwdEligibility: "non-medicine",
+    vatExempt: true,
+    isPrescription: false
+  },
+  {
+    id: "prd-amox-500",
+    name: "Amoxicillin 500mg (Rx)",
+    barcode: "100007",
+    categoryId: "cat-first-aid",
+    supplier: "MediSupply",
+    price: 9.5,
+    quantity: 24,
+    minStock: 8,
+    tracksStock: true,
+    expirationDate: (() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 10);
+      return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+    })(),
+    imageColor: "#FF8A30",
+    scPwdEligibility: "medicine",
+    vatExempt: false,
+    isPrescription: true
+  },
+  {
+    id: "prd-ceph-250",
+    name: "Cephalexin 250mg (Rx)",
+    barcode: "100008",
+    categoryId: "cat-first-aid",
+    supplier: "ClinicPro",
+    price: 7.8,
+    quantity: 8,
+    minStock: 5,
+    tracksStock: true,
+    expirationDate: (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 2);
+      return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+    })(),
+    imageColor: "#E04F4F",
+    scPwdEligibility: "medicine",
+    vatExempt: false,
+    isPrescription: true
   },
   {
     id: "prd-consult",
@@ -84,14 +139,65 @@ export const seedProducts: Product[] = [
     minStock: 0,
     tracksStock: false,
     expirationDate: "N/A",
-    imageColor: "#5433FF"
+    imageColor: "#5433FF",
+    scPwdEligibility: "excluded",
+    vatExempt: true,
+    isPrescription: false
+  },
+  {
+    id: "prd-masks",
+    name: "Disposable Face Masks 10s",
+    barcode: "100009",
+    categoryId: "cat-first-aid",
+    supplier: "ClinicPro",
+    price: 5.0,
+    quantity: 50,
+    minStock: 10,
+    tracksStock: true,
+    expirationDate: "2030-01-01",
+    imageColor: "#2ECC71",
+    scPwdEligibility: "non-medicine",
+    vatExempt: true,
+    isPrescription: false
+  },
+  {
+    id: "prd-aspirin",
+    name: "Aspirin 81mg",
+    barcode: "100010",
+    categoryId: "cat-pain",
+    supplier: "HealthSource",
+    price: 3.75,
+    quantity: 60,
+    minStock: 12,
+    tracksStock: true,
+    expirationDate: "2027-11-30",
+    imageColor: "#E74C3C",
+    scPwdEligibility: "medicine",
+    vatExempt: false,
+    isPrescription: false
+  },
+  {
+    id: "prd-lancets",
+    name: "Blood Lancets 100s",
+    barcode: "100011",
+    categoryId: "cat-first-aid",
+    supplier: "MediSupply",
+    price: 18.0,
+    quantity: 20,
+    minStock: 5,
+    tracksStock: true,
+    expirationDate: "2030-06-15",
+    imageColor: "#3498DB",
+    scPwdEligibility: "non-medicine",
+    vatExempt: true,
+    isPrescription: false
   }
 ];
 
 export const seedCustomers: Customer[] = [
-  { id: "walk-in", name: "Walk in customer", phone: "", email: "" },
-  { id: "cus-ana", name: "Ana Reyes", phone: "+63 900 111 2222", email: "ana@example.com" },
-  { id: "cus-lee", name: "Marcus Lee", phone: "+63 900 333 4444", email: "marcus@example.com" }
+  { id: "walk-in", name: "Walk in customer", phone: "", email: "", createdAt: new Date().toISOString() },
+  { id: "cus-ana", name: "Ana Reyes", phone: "+63 900 111 2222", email: "ana@example.com", createdAt: new Date().toISOString() },
+  { id: "cus-lee", name: "Marcus Lee", phone: "+63 900 333 4444", email: "marcus@example.com", createdAt: new Date().toISOString() }
 ];
 
 export const seedUsers: User[] = [
@@ -111,6 +217,15 @@ export const seedUsers: User[] = [
   }
 ];
 
+const seedScPwdSettings: ScPwdSettings = {
+  enabled: true,
+  discountRate: 20,
+  vatRegistered: true,
+  defaultMedicineEligibility: "medicine",
+  duplicateIdThreshold: 2,
+  dailyAlertThreshold: 5
+};
+
 export const seedSettings: Settings = {
   id: "store",
   store: "PharmaSpot Demo",
@@ -121,7 +236,9 @@ export const seedSettings: Settings = {
   vatPercentage: 12,
   chargeTax: true,
   quickBilling: false,
-  receiptFooter: "Thank you for choosing PharmaSpot."
+  receiptFooter: "Thank you for choosing PharmaSpot.",
+  expiryAlertDays: 30,
+  scPwdSettings: seedScPwdSettings
 };
 
 export const seedTransactions: Transaction[] = [];
