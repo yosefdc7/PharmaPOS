@@ -10,3 +10,4 @@ coverage
 *.log
 # Windows reserved name (accidental `echo > nul` creates this in repo root)
 nul
+.vercel
