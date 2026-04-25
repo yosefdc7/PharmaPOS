@@ -3,6 +3,7 @@
 ## 2026-04-25 - Savepoint
 
 ### Added
+- Root `vercel.json` for Vercel deploys from repository root: installs and builds `web-prototype`, outputs static `web-prototype/out` (Next.js `output: "export"`). For dashboard “Root Directory = web-prototype”, use the `web-prototype/vercel.json` preset instead (agent: codex)
 - RX/DD UI workspace: classification, dispensing gates, prescription drawer, patient profile, DD log, red flags, inspection dashboard; Settings Prescriptions tab; product drug-class badges and product master fields (agent: qoder)
 - BIR compliance UI: settings configuration, compliance status indicator, OR preview (normal/void/reprint), X-Reading, Z-Reading with history, eJournal export, eSales report (agent: qoder)
 - Thermal printer management UI: multi-printer profiles, receipt layout config, printer status indicator, reprint queue, print failure modal with digital receipt fallback (agent: qoder)
