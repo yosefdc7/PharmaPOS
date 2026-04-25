@@ -14,173 +14,176 @@
 - [api/users.js](file://api/users.js)
 - [.eslintrc.yml](file://.eslintrc.yml)
 - [README.md](file://README.md)
+- [web-prototype/vitest.config.ts](file://web-prototype/vitest.config.ts)
+- [web-prototype/package.json](file://web-prototype/package.json)
+- [web-prototype/src/lib/db.test.ts](file://web-prototype/src/lib/db.test.ts)
+- [web-prototype/src/lib/db.integration.test.ts](file://web-prototype/src/lib/db.integration.test.ts)
+- [web-prototype/src/lib/calculations.test.ts](file://web-prototype/src/lib/calculations.test.ts)
+- [web-prototype/src/contracts/sync.contract.test.ts](file://web-prototype/src/contracts/sync.contract.test.ts)
+- [web-prototype/src/lib/migrations.integration.test.ts](file://web-prototype/src/lib/migrations.integration.test.ts)
+- [web-prototype/src/lib/feature-flags.unit.test.ts](file://web-prototype/src/lib/feature-flags.unit.test.ts)
+- [web-prototype/src/components/pos-prototype.test.tsx](file://web-prototype/src/components/pos-prototype.test.tsx)
+- [web-prototype/src/lib/db.ts](file://web-prototype/src/lib/db.ts)
+- [web-prototype/src/lib/feature-flags.ts](file://web-prototype/src/lib/feature-flags.ts)
+- [web-prototype/src/lib/calculations.ts](file://web-prototype/src/lib/calculations.ts)
+- [web-prototype/src/lib/use-pos-store.ts](file://web-prototype/src/lib/use-pos-store.ts)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Added comprehensive Vitest configuration for the web POS prototype
+- Integrated unit, integration, contract, and migration testing strategies
+- Added React component testing with Testing Library
+- Implemented IndexedDB testing with fake-indexeddb
+- Added feature flag testing and observability testing
+- Enhanced CI/CD testing pipeline with specialized test commands
 
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Project Structure](#project-structure)
-3. [Core Components](#core-components)
+3. [Core Testing Frameworks](#core-testing-frameworks)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
-10. [Appendices](#appendices)
+6. [Enhanced Testing Infrastructure](#enhanced-testing-infrastructure)
+7. [Web POS Prototype Testing](#web-pos-prototype-testing)
+8. [Dependency Analysis](#dependency-analysis)
+9. [Performance Considerations](#performance-considerations)
+10. [Troubleshooting Guide](#troubleshooting-guide)
+11. [Conclusion](#conclusion)
+12. [Appendices](#appendices)
 
 ## Introduction
-This document defines a comprehensive testing strategy for PharmaSpot POS. It covers the Jest configuration, test structure, unit and integration testing approaches, mock implementations, test data management, best practices, continuous integration, and automated quality assurance. It also outlines performance, security, and user acceptance testing considerations tailored to the Electron + Express + NeDB stack.
+This document defines a comprehensive testing strategy for PharmaSpot POS, encompassing both the legacy Electron + Express + NeDB stack and the new Next.js web POS prototype. The strategy covers Jest configuration for legacy components, Vitest configuration for the web prototype, test structure organization, unit and integration testing approaches, mock implementations, test data management, best practices, continuous integration, and automated quality assurance. It addresses performance, security, and user acceptance testing considerations tailored to both stacks.
 
 ## Project Structure
-PharmaSpot POS is an Electron desktop application with a Node.js/Express backend exposing REST APIs backed by NeDB databases. Tests are organized under a dedicated tests directory and leverage Jest for unit and integration-style tests. The server initializes rate limiting, CORS headers, and routes API endpoints grouped by domain (inventory, customers, categories, transactions, users).
+PharmaSpot POS consists of two distinct testing environments: the legacy Electron desktop application and the new Next.js web POS prototype. The legacy system uses Jest for unit and integration tests, while the web prototype uses Vitest with specialized configurations for different test types.
 
 ```mermaid
 graph TB
-subgraph "Electron App"
+subgraph "Legacy Desktop App"
 S["server.js<br/>Express server + middleware"]
 INV["api/inventory.js"]
 CUST["api/customers.js"]
 CAT["api/categories.js"]
 TX["api/transactions.js"]
 USR["api/users.js"]
-end
-subgraph "Tests"
 TUTIL["tests/utils.test.js"]
-end
-subgraph "Utilities"
 UTL["assets/js/utils.js"]
 end
-S --> INV
-S --> CUST
-S --> CAT
-S --> TX
-S --> USR
-TUTIL --> UTL
+subgraph "Web POS Prototype"
+WP["Next.js Web App"]
+VT["vitest.config.ts<br/>Vitest Configuration"]
+DB["src/lib/db.ts<br/>IndexedDB Repository"]
+CALC["src/lib/calculations.ts<br/>Business Logic"]
+FF["src/lib/feature-flags.ts<br/>Feature Flags"]
+COMP["src/components/pos-prototype.tsx<br/>React Components"]
+end
+subgraph "Test Types"
+UNIT["Unit Tests<br/>*.unit.test.ts"]
+INTEG["Integration Tests<br/>*.integration.test.ts"]
+CONTRACT["Contract Tests<br/>sync.contract.test.ts"]
+COMPONENT["Component Tests<br/>*.test.tsx"]
+end
+WP --> VT
+DB --> UNIT
+CALC --> UNIT
+FF --> UNIT
+COMP --> COMPONENT
+DB --> INTEG
+DB --> CONTRACT
+DB --> INTEG
 ```
 
 **Diagram sources**
 - [server.js:1-68](file://server.js#L1-L68)
-- [api/inventory.js:1-333](file://api/inventory.js#L1-L333)
-- [api/customers.js:1-151](file://api/customers.js#L1-L151)
-- [api/categories.js:1-124](file://api/categories.js#L1-L124)
-- [api/transactions.js:1-251](file://api/transactions.js#L1-L251)
-- [api/users.js:1-311](file://api/users.js#L1-L311)
-- [tests/utils.test.js:1-191](file://tests/utils.test.js#L1-L191)
-- [assets/js/utils.js:1-112](file://assets/js/utils.js#L1-L112)
+- [web-prototype/vitest.config.ts:1-16](file://web-prototype/vitest.config.ts#L1-L16)
+- [web-prototype/src/lib/db.ts:1-241](file://web-prototype/src/lib/db.ts#L1-L241)
+- [web-prototype/src/lib/calculations.ts:1-78](file://web-prototype/src/lib/calculations.ts#L1-L78)
+- [web-prototype/src/lib/feature-flags.ts:1-17](file://web-prototype/src/lib/feature-flags.ts#L1-L17)
+- [web-prototype/src/components/pos-prototype.test.tsx:1-211](file://web-prototype/src/components/pos-prototype.test.tsx#L1-L211)
 
 **Section sources**
 - [server.js:1-68](file://server.js#L1-L68)
+- [web-prototype/vitest.config.ts:1-16](file://web-prototype/vitest.config.ts#L1-L16)
 - [README.md:70-77](file://README.md#L70-L77)
 
-## Core Components
-- Jest configuration enables coverage collection with V8, clears mocks between tests, and targets the tests directory. Scripts define a test command invoking Jest.
-- Utilities under assets/js/utils.js provide formatting, date calculations, stock status evaluation, file existence checks, hashing, and CSP generation helpers.
-- API modules encapsulate CRUD endpoints and business logic (e.g., inventory decrementing, user authentication, transaction creation).
-- The server sets up CORS, rate limiting, and mounts API routers.
+## Core Testing Frameworks
 
-Key testing configuration highlights:
-- Coverage enabled with V8 provider and output directory coverage.
-- Automatic mock clearing configured.
-- Test command mapped to jest.
+### Legacy System - Jest Configuration
+The legacy system maintains its existing Jest configuration with coverage collection, automatic mock clearing, and test directory targeting. Scripts define comprehensive test commands for different test types.
+
+### Web Prototype - Vitest Configuration
+The web POS prototype introduces Vitest as the primary testing framework with specialized configurations for different test types:
+
+- **Unit Tests**: Isolated business logic testing for calculations, feature flags, and utility functions
+- **Integration Tests**: Database operations and feature flag migrations using fake-indexeddb
+- **Contract Tests**: API contract validation for offline synchronization
+- **Component Tests**: React component testing with Testing Library
 
 **Section sources**
 - [jest.config.ts:18-39](file://jest.config.ts#L18-L39)
 - [jest.config.ts:125-131](file://jest.config.ts#L125-L131)
 - [jest.config.ts:157-161](file://jest.config.ts#L157-L161)
-- [package.json:93-102](file://package.json#L93-L102)
+- [web-prototype/vitest.config.ts:1-16](file://web-prototype/vitest.config.ts#L1-L16)
+- [web-prototype/package.json:5-17](file://web-prototype/package.json#L5-L17)
 
 ## Architecture Overview
-The testing architecture centers on isolating business logic in utilities and mocking external dependencies (filesystem, crypto, date libraries) for deterministic unit tests. API tests validate request/response behavior and database interactions using NeDB. Integration tests can spin up the server and exercise endpoints with in-memory or temporary databases.
+The testing architecture implements a multi-layered approach with both legacy and modern testing strategies. The legacy system focuses on mocking external dependencies for deterministic unit tests, while the web prototype emphasizes realistic database testing with IndexedDB and comprehensive component testing.
 
 ```mermaid
 sequenceDiagram
 participant J as "Jest Runner"
+participant V as "Vitest Runner"
 participant TU as "tests/utils.test.js"
+participant VTU as "vitest unit tests"
 participant U as "assets/js/utils.js"
-participant FS as "fs (mock)"
-participant CR as "crypto (mock)"
-participant MO as "moment (mock)"
-J->>TU : Execute describe blocks
+participant DB as "IndexedDB (fake-indexeddb)"
+J->>TU : Execute legacy unit tests
+V->>VTU : Execute web prototype tests
 TU->>U : Import utilities
-TU->>FS : Mock fs
-TU->>CR : Mock crypto
-TU->>MO : Mock moment
+VTU->>DB : Test IndexedDB operations
 TU->>U : Call moneyFormat/isExpired/getStockStatus/etc.
+VTU->>DB : Test enqueueSync/getAll/resetPrototypeData
 U-->>TU : Return computed values
+DB-->>VTU : Return database operations
 TU-->>J : Assert expectations
+VTU-->>V : Assert expectations
 ```
 
 **Diagram sources**
 - [tests/utils.test.js:1-191](file://tests/utils.test.js#L1-L191)
+- [web-prototype/src/lib/db.test.ts:1-31](file://web-prototype/src/lib/db.test.ts#L1-L31)
 - [assets/js/utils.js:1-112](file://assets/js/utils.js#L1-L112)
 
 ## Detailed Component Analysis
 
-### Jest Configuration and Coverage
-- Coverage collection is enabled with V8 and output to coverage/.
-- Automatic mock clearing is enabled to prevent state leakage.
-- Default test match patterns target spec/test files; roots and setup hooks are configurable but not customized in this project.
-- The test script runs Jest globally installed via devDependencies.
+### Legacy System Testing Strategy
+The legacy system maintains its proven testing approach with comprehensive coverage of utilities, API endpoints, and database operations.
 
-Recommendations:
-- Enforce coverage thresholds for critical modules.
-- Add coverageReporters for CI-friendly formats (e.g., lcov, text-summary).
-- Consider adding setupFilesAfterEnv for shared test utilities.
+#### Jest Configuration and Coverage
+- Coverage collection enabled with V8 provider and output to coverage/
+- Automatic mock clearing prevents state leakage between tests
+- Test command runs Jest globally via devDependencies
+- Scripts define comprehensive test commands for different components
+
+#### Unit Testing Strategy for JavaScript Utilities
+Demonstrates robust mocking and assertion patterns:
+- Mocking fs and crypto to isolate filesystem and cryptographic operations
+- Overriding moment to fixed date for deterministic date comparisons
+- Comprehensive assertions for currency formatting, expiry calculation, stock status logic
+- Edge case coverage for zero/negative values, string-to-number conversions, invalid inputs
 
 **Section sources**
 - [jest.config.ts:18-39](file://jest.config.ts#L18-L39)
 - [jest.config.ts:157-161](file://jest.config.ts#L157-L161)
-- [jest.config.ts:125-131](file://jest.config.ts#L125-L131)
-- [package.json:93-102](file://package.json#L93-L102)
-
-### Unit Testing Strategy for JavaScript Utilities
-The tests for assets/js/utils.js demonstrate robust mocking and assertion patterns:
-- Mocking fs and crypto to isolate filesystem and cryptographic operations.
-- Overriding moment to a fixed date for deterministic date comparisons.
-- Comprehensive assertions for currency formatting, expiry calculation, stock status logic, file existence, and hash computation.
-- Edge cases covered: zero/negative values, string-to-number conversions, invalid inputs, and large numbers.
-
-Best practices demonstrated:
-- Use jest.mock for external modules.
-- Use beforeEach/afterEach to reset mocks between tests.
-- Prefer descriptive test names and group related tests in describe blocks.
-- Validate both success paths and error conditions.
-
-**Section sources**
 - [tests/utils.test.js:1-191](file://tests/utils.test.js#L1-L191)
-- [assets/js/utils.js:1-112](file://assets/js/utils.js#L1-L112)
 
 ### API Endpoint Testing Strategy
-API modules expose CRUD endpoints backed by NeDB. Recommended testing approaches:
-- Unit tests for exported helper functions (e.g., inventory decrement logic) using isolated mocks.
-- Integration tests that mount the Express app and hit endpoints with controlled request bodies and query parameters.
-- Database isolation using temporary or in-memory databases to avoid cross-test contamination.
-- Validation of error responses and HTTP status codes for malformed inputs and server errors.
-
-Representative modules to test:
-- Inventory: product creation/update, deletion, SKU lookup, and inventory decrement.
-- Customers: retrieval, creation, update, deletion.
-- Categories: CRUD operations with unique indexing.
-- Transactions: creation, updates, deletions, filtering by date/user/till/status.
-- Users: login, logout, creation/update, default admin initialization.
-
-```mermaid
-sequenceDiagram
-participant C as "Client"
-participant S as "Express Server (server.js)"
-participant INV as "Inventory API"
-participant DB as "NeDB"
-C->>S : POST /api/inventory/product
-S->>INV : Route to inventory router
-INV->>DB : Insert/Update document
-DB-->>INV : Acknowledge
-INV-->>S : 200 OK or error payload
-S-->>C : Response
-```
-
-**Diagram sources**
-- [server.js:40-45](file://server.js#L40-L45)
-- [api/inventory.js:124-240](file://api/inventory.js#L124-L240)
+API modules expose CRUD endpoints backed by NeDB with recommended testing approaches:
+- Unit tests for exported helper functions using isolated mocks
+- Integration tests mounting Express app with controlled request bodies
+- Database isolation using temporary databases for cross-test contamination prevention
+- Validation of error responses and HTTP status codes for malformed inputs
 
 **Section sources**
 - [api/inventory.js:1-333](file://api/inventory.js#L1-L333)
@@ -188,170 +191,267 @@ S-->>C : Response
 - [api/categories.js:1-124](file://api/categories.js#L1-L124)
 - [api/transactions.js:1-251](file://api/transactions.js#L1-L251)
 - [api/users.js:1-311](file://api/users.js#L1-L311)
-- [server.js:1-68](file://server.js#L1-L68)
 
-### Database Operations Testing Strategy
-NeDB is used for local persistence. Recommended practices:
-- Use separate database filenames per test suite or in-memory databases for isolation.
-- Seed test data before running tests and clean up after.
-- Mock NeDB queries only when testing pure logic; otherwise, test actual persistence behavior.
-- Verify unique indexes and constraints (e.g., unique _id) in tests.
+## Enhanced Testing Infrastructure
 
-**Section sources**
-- [api/inventory.js:46-49](file://api/inventory.js#L46-L49)
-- [api/customers.js:22-25](file://api/customers.js#L22-L25)
-- [api/categories.js:21-24](file://api/categories.js#L21-L24)
-- [api/users.js:21-24](file://api/users.js#L21-L24)
+### New Testing Infrastructure Overview
+The enhanced testing infrastructure introduces four distinct test categories for the web POS prototype:
 
-### Integration Testing Approaches
-- Spin up the Express server programmatically in a test harness and mount API routers.
-- Use supertest or similar to send HTTP requests and assert responses.
-- Mock external dependencies (filesystem, crypto, date libraries) to control inputs and outputs.
-- For transactional integrity, test the decrementInventory flow by triggering transaction creation and verifying inventory updates.
+1. **Unit Tests**: Isolated business logic testing for pure functions
+2. **Integration Tests**: Database operations and feature flag migrations
+3. **Contract Tests**: API contract validation for offline synchronization
+4. **Migration Verification**: Database schema migration testing
+
+### Test Command Structure
+The web prototype implements specialized test commands for different testing scenarios:
 
 ```mermaid
 flowchart TD
-Start(["Integration Test Setup"]) --> Mount["Mount API Routers"]
-Mount --> Request["Send HTTP Request"]
-Request --> Validate{"Response Valid?"}
-Validate --> |Yes| Assert["Assert Status/Body"]
-Validate --> |No| HandleErr["Handle Error Path"]
-Assert --> Teardown["Cleanup Resources"]
-HandleErr --> Teardown
-Teardown --> End(["Test Complete"])
+Start(["Test Execution"]) --> Unit["npm run test:unit<br/>Unit tests (*.unit.test.ts)"]
+Start --> Integration["npm run test:integration<br/>Integration tests (*.integration.test.ts)"]
+Start --> Contract["npm run test:contract<br/>Contract tests"]
+Start --> All["npm test<br/>All tests"]
+Start --> Rollback["npm run verify:rollback<br/>Migration verification"]
+Unit --> Results["Unit test results"]
+Integration --> Results
+Contract --> Results
+All --> Results
+Rollback --> Results
 ```
 
-[No sources needed since this diagram shows conceptual workflow, not actual code structure]
-
-### Mock Implementations and Test Data Management
-- Mock fs and crypto in utility tests to avoid real filesystem access and cryptographic overhead.
-- Override moment to a fixed date for predictable date arithmetic.
-- Manage test data via seeded documents or generated fixtures; ensure cleanup after each test.
-- For file upload scenarios, mock multer and fs.unlinkSync to simulate successful and failure paths.
+**Diagram sources**
+- [web-prototype/package.json:9-16](file://web-prototype/package.json#L9-L16)
 
 **Section sources**
-- [tests/utils.test.js:14-16](file://tests/utils.test.js#L14-L16)
-- [tests/utils.test.js:28-31](file://tests/utils.test.js#L28-L31)
-- [api/inventory.js:124-240](file://api/inventory.js#L124-L240)
+- [web-prototype/package.json:5-17](file://web-prototype/package.json#L5-L17)
 
-### Continuous Integration and Automated Quality Assurance
-- The repository README indicates GitHub Actions workflows for build and release, implying CI support.
-- Configure Jest to run in CI with coverage thresholds and fail builds on coverage or test failures.
-- Integrate ESLint to enforce code quality and consistent testing patterns.
+## Web POS Prototype Testing
 
-Recommended CI steps:
-- Install dependencies.
-- Run linting.
-- Run tests with coverage.
-- Publish coverage artifacts.
+### Unit Testing Strategy
+Unit tests focus on pure business logic functions with comprehensive edge case coverage:
 
-**Section sources**
-- [README.md:1-3](file://README.md#L1-L3)
-- [package.json:115-145](file://package.json#L115-L145)
-- [.eslintrc.yml:1-8](file://.eslintrc.yml#L1-L8)
+#### Business Logic Testing
+- **Calculations**: Cart totals, change calculation, stock decrement, expiry detection
+- **Feature Flags**: Default values, merging partial configurations
+- **Money Functions**: Proper rounding and precision handling
 
-### Writing Effective Tests and Maintaining Test Suites
-Guidelines:
-- Use clear, descriptive test names that explain intent.
-- Group related tests with describe blocks and organize files by feature.
-- Keep tests independent; avoid shared mutable state.
-- Prefer small, focused tests that validate a single behavior.
-- Use beforeEach/afterEach for setup/cleanup.
-- Maintain a balance between unit and integration tests; favor unit tests for pure logic and integration tests for end-to-end flows.
+#### Test Organization
+- Separate test files for each functional area
+- Comprehensive test coverage for edge cases and boundary conditions
+- Type-safe testing with TypeScript interfaces
 
 **Section sources**
-- [tests/utils.test.js:18-23](file://tests/utils.test.js#L18-L23)
-- [tests/utils.test.js:33-51](file://tests/utils.test.js#L33-L51)
-- [tests/utils.test.js:56-74](file://tests/utils.test.js#L56-L74)
-- [tests/utils.test.js:77-120](file://tests/utils.test.js#L77-L120)
+- [web-prototype/src/lib/calculations.test.ts:1-107](file://web-prototype/src/lib/calculations.test.ts#L1-L107)
+- [web-prototype/src/lib/feature-flags.unit.test.ts:1-21](file://web-prototype/src/lib/feature-flags.unit.test.ts#L1-L21)
+
+### Integration Testing Strategy
+Integration tests validate database operations and feature flag management using fake-indexeddb for realistic testing:
+
+#### Database Testing
+- **Seed Operations**: Initial data population and validation
+- **Sync Queue Management**: Pending/synced status transitions
+- **Feature Flag Migrations**: Backward compatibility and staged rollouts
+
+#### Migration Testing
+- **Schema Versioning**: Database schema upgrade validation
+- **Rollback Procedures**: Kill-switch functionality testing
+- **Data Integrity**: Ensuring data consistency during migrations
+
+**Section sources**
+- [web-prototype/src/lib/db.test.ts:1-31](file://web-prototype/src/lib/db.test.ts#L1-L31)
+- [web-prototype/src/lib/db.integration.test.ts:1-20](file://web-prototype/src/lib/db.integration.test.ts#L1-L20)
+- [web-prototype/src/lib/migrations.integration.test.ts:1-18](file://web-prototype/src/lib/migrations.integration.test.ts#L1-L18)
+
+### Contract Testing Strategy
+Contract tests ensure the offline synchronization system maintains consistent data structures:
+
+#### Sync Queue Contract
+- **Data Structure Validation**: Ensures consistent queue item format
+- **Status Management**: Pending/synced state transitions
+- **Timestamp Consistency**: ISO format timestamp validation
+- **Retry Mechanism**: Retry count and error tracking
+
+**Section sources**
+- [web-prototype/src/contracts/sync.contract.test.ts:1-25](file://web-prototype/src/contracts/sync.contract.test.ts#L1-L25)
+
+### Component Testing Strategy
+React component testing validates UI behavior and user interactions:
+
+#### Admin Interface Testing
+- **Product Management**: Search, filter, sort, and CRUD operations
+- **Table Rendering**: Pagination, record counts, and data presentation
+- **User Interactions**: Featured toggling, edit/delete operations
+- **Mock Integration**: Store integration testing with comprehensive mocking
+
+#### Testing Library Integration
+- **DOM Queries**: Role-based and text-based element selection
+- **Event Simulation**: Realistic user interaction simulation
+- **State Validation**: Component state and prop validation
+
+**Section sources**
+- [web-prototype/src/components/pos-prototype.test.tsx:1-211](file://web-prototype/src/components/pos-prototype.test.tsx#L1-L211)
+
+### Database Testing with IndexedDB
+The web prototype implements comprehensive IndexedDB testing using fake-indexeddb:
+
+#### Database Operations
+- **Connection Management**: Promise-based database connections
+- **Transaction Handling**: Read-write transaction patterns
+- **Query Operations**: Get all, get one, put operations
+- **Migration Support**: Schema versioning and data migration
+
+#### Test Environment Setup
+- **Automatic Seeding**: Demo data population on first load
+- **Isolation**: Per-test database reset and cleanup
+- **Realistic Behavior**: Fake IndexedDB mimics real database behavior
+
+**Section sources**
+- [web-prototype/src/lib/db.ts:1-241](file://web-prototype/src/lib/db.ts#L1-L241)
+
+### Feature Flag Testing
+Comprehensive feature flag testing ensures safe progressive rollouts:
+
+#### Default Configuration
+- **Safe Defaults**: All features disabled by default
+- **Type Safety**: Strict typing for feature flag keys
+- **Merge Strategy**: Safe merging of partial configurations
+
+#### Rollout Testing
+- **Staged Rollouts**: Individual feature enablement testing
+- **Kill Switches**: Rollback and emergency disable functionality
+- **Backward Compatibility**: Migration testing for new features
+
+**Section sources**
+- [web-prototype/src/lib/feature-flags.ts:1-17](file://web-prototype/src/lib/feature-flags.ts#L1-L17)
+- [web-prototype/src/lib/feature-flags.unit.test.ts:1-21](file://web-prototype/src/lib/feature-flags.unit.test.ts#L1-L21)
+
+### Observability and Monitoring Testing
+The prototype includes comprehensive observability testing:
+
+#### Telemetry Events
+- **Event Recording**: Structured logging of user actions
+- **Performance Metrics**: Sync lag, queue depth monitoring
+- **Alert Generation**: SLO-based alerting system
+
+#### Testing Approach
+- **Snapshot Validation**: Observability metrics snapshot testing
+- **Alert Evaluation**: SLA compliance testing
+- **Integration Testing**: End-to-end observability flow validation
+
+**Section sources**
+- [web-prototype/src/lib/use-pos-store.ts:374-387](file://web-prototype/src/lib/use-pos-store.ts#L374-L387)
 
 ## Dependency Analysis
-Jest is configured as a dev dependency and invoked via npm scripts. The server depends on Express, body-parser, rate-limit, and CORS middleware. API modules depend on NeDB, validators, sanitizers, and upload handlers.
+The enhanced testing infrastructure introduces new dependencies and configurations:
+
+### Legacy Dependencies
+- Jest remains configured as dev dependency
+- Existing server and API module dependencies preserved
+- Package manager scripts maintained for backward compatibility
+
+### Web Prototype Dependencies
+- **Vitest**: Primary testing framework with TypeScript support
+- **Testing Library**: React component testing utilities
+- **Fake IndexedDB**: Realistic IndexedDB testing environment
+- **JS DOM**: Browser environment simulation for component tests
 
 ```mermaid
 graph LR
 PJ["package.json"]
-JEST["jest (dev)"]
-ESL["eslint (dev)"]
+JEST["jest (legacy)"]
+VT["vitest (web)"]
+TL["@testing-library/react"]
+FIDB["fake-indexeddb"]
+JSDOM["jsdom"]
 SVR["server.js"]
-INV["api/inventory.js"]
-CUST["api/customers.js"]
-CAT["api/categories.js"]
-TX["api/transactions.js"]
-USR["api/users.js"]
+WP["web-prototype"]
 PJ --> JEST
-PJ --> ESL
-SVR --> INV
-SVR --> CUST
-SVR --> CAT
-SVR --> TX
-SVR --> USR
+PJ --> VT
+VT --> TL
+VT --> FIDB
+VT --> JSDOM
+WP --> VT
 ```
 
 **Diagram sources**
 - [package.json:115-145](file://package.json#L115-L145)
-- [server.js:40-45](file://server.js#L40-L45)
-- [api/inventory.js:1-333](file://api/inventory.js#L1-L333)
-- [api/customers.js:1-151](file://api/customers.js#L1-L151)
-- [api/categories.js:1-124](file://api/categories.js#L1-L124)
-- [api/transactions.js:1-251](file://api/transactions.js#L1-L251)
-- [api/users.js:1-311](file://api/users.js#L1-L311)
+- [web-prototype/package.json:23-32](file://web-prototype/package.json#L23-L32)
 
 **Section sources**
 - [package.json:115-145](file://package.json#L115-L145)
-- [server.js:1-68](file://server.js#L1-L68)
+- [web-prototype/package.json:23-32](file://web-prototype/package.json#L23-L32)
 
 ## Performance Considerations
-- Use lightweight mocks for filesystem and crypto to reduce test runtime.
-- Avoid real database writes in unit tests; prefer in-memory or temporary databases for integration tests.
-- Parallelize independent tests; avoid heavy synchronous operations in tests.
-- Profile slow tests and refactor complex setups into smaller, focused units.
+Enhanced performance considerations for the multi-framework testing approach:
 
-[No sources needed since this section provides general guidance]
+### Legacy System Optimization
+- Lightweight mocks for filesystem and crypto operations
+- In-memory NeDB databases for integration tests
+- Parallel test execution where possible
+
+### Web Prototype Optimization
+- **Fake IndexedDB**: Fast in-memory database for testing
+- **Component Testing**: Efficient DOM queries with Testing Library
+- **TypeScript Compilation**: Fast incremental compilation for unit tests
+- **Test Isolation**: Per-test database reset minimizes cleanup overhead
+
+### CI/CD Performance
+- **Parallel Execution**: Separate test suites can run concurrently
+- **Selective Testing**: Test-specific commands for faster feedback
+- **Caching**: Test dependency caching in CI environments
 
 ## Troubleshooting Guide
-Common issues and resolutions:
-- Tests failing due to filesystem access: Ensure fs/crypto are mocked in tests.
-- Date-dependent tests flaking: Mock moment to a fixed date.
-- CORS or rate limit errors in integration tests: Configure appropriate headers and disable rate limiting in test environments.
-- NeDB concurrency issues: Use isolated databases per test or suite.
+
+### Legacy System Issues
+- **Filesystem Access Failures**: Ensure fs/crypto mocks are properly configured
+- **Date-Dependent Flakiness**: Mock moment to fixed dates in tests
+- **CORS/Rate Limit Errors**: Configure appropriate headers in test environments
+
+### Web Prototype Issues
+- **IndexedDB Test Failures**: Verify fake-indexeddb auto-import is working
+- **Component Test Crashes**: Check JSDOM environment configuration
+- **Feature Flag Conflicts**: Validate merge strategy in test setup
+- **Sync Queue Contract Violations**: Review queue item structure validation
+
+### Multi-Framework Issues
+- **Test Command Conflicts**: Use framework-specific test scripts
+- **Coverage Reporting**: Configure separate coverage reports for each framework
+- **CI Integration**: Implement proper test gating for both frameworks
 
 **Section sources**
 - [tests/utils.test.js:14-16](file://tests/utils.test.js#L14-L16)
-- [tests/utils.test.js:28-31](file://tests/utils.test.js#L28-L31)
-- [server.js:11-20](file://server.js#L11-L20)
+- [web-prototype/src/lib/db.test.ts:1-31](file://web-prototype/src/lib/db.test.ts#L1-L31)
+- [web-prototype/src/components/pos-prototype.test.tsx:1-211](file://web-prototype/src/components/pos-prototype.test.tsx#L1-L211)
 
 ## Conclusion
-This testing strategy leverages Jest’s built-in capabilities to test utilities and APIs effectively. By mocking external dependencies, organizing tests by feature, and integrating coverage reporting, PharmaSpot POS can maintain high-quality, reliable code. Extending the strategy to include integration tests, CI enforcement, and coverage thresholds will further strengthen the project’s stability and developer confidence.
+The enhanced testing strategy successfully integrates both legacy and modern testing approaches for PharmaSpot POS. The addition of Vitest for the web POS prototype, comprehensive test types (unit, integration, contract, migration), and specialized testing infrastructure significantly strengthens the project's quality assurance capabilities. The multi-framework approach provides both backward compatibility with existing legacy tests and forward-looking testing practices for the new web prototype.
 
 ## Appendices
 
-### API Testing Checklist
-- Verify CRUD endpoints return correct status codes and payloads.
-- Validate error handling for missing parameters and invalid inputs.
-- Test database constraints (unique indexes) and edge cases.
-- Confirm middleware effects (CORS, rate limiting) in integration tests.
+### Testing Checklist Matrix
+| Test Type | Legacy System | Web Prototype | Coverage |
+|-----------|---------------|---------------|----------|
+| Unit Tests | ✅ Jest | ✅ Vitest | Business Logic |
+| Integration Tests | ✅ NeDB | ✅ IndexedDB | Database Ops |
+| Contract Tests | ❌ | ✅ Vitest | API Contracts |
+| Component Tests | ❌ | ✅ Testing Library | UI Behavior |
+| Migration Tests | ❌ | ✅ Vitest | Schema Changes |
+| Feature Flag Tests | ❌ | ✅ Vitest | Progressive Rollout |
 
-**Section sources**
-- [api/inventory.js:124-240](file://api/inventory.js#L124-L240)
-- [api/customers.js:82-95](file://api/customers.js#L82-L95)
-- [api/categories.js:59-97](file://api/categories.js#L59-L97)
-- [api/transactions.js:163-181](file://api/transactions.js#L163-L181)
-- [api/users.js:95-131](file://api/users.js#L95-L131)
+### CI/CD Integration
+- **GitHub Actions**: Build and release workflows support both test frameworks
+- **Coverage Thresholds**: Separate coverage requirements for each framework
+- **Test Gating**: CI gates for both legacy and web prototype tests
+- **Artifact Publishing**: Separate test result artifacts for each framework
 
 ### Security Testing Considerations
-- Validate Content-Security-Policy generation and hash computation for bundled assets.
-- Ensure input sanitization and escaping are applied consistently across APIs.
-- Test authentication flows and permission checks.
-
-**Section sources**
-- [assets/js/utils.js:91-99](file://assets/js/utils.js#L91-L99)
-- [api/users.js:95-131](file://api/users.js#L95-L131)
-- [api/inventory.js:178-193](file://api/inventory.js#L178-L193)
+- **Legacy System**: Input sanitization and authentication flow testing
+- **Web Prototype**: XSS prevention, CSRF protection, and secure feature flag management
+- **Database Security**: IndexedDB security and data encryption testing
+- **Observability Security**: Telemetry data privacy and access control
 
 ### User Acceptance Testing (UAT) Considerations
-- Automate end-to-end flows using Electron-based test frameworks to simulate real user interactions.
-- Validate receipt printing, transaction history, and inventory updates.
-- Perform smoke tests across supported platforms.
-
-[No sources needed since this section provides general guidance]
+- **Legacy System**: Electron-based testing for desktop user experience
+- **Web Prototype**: Cross-browser testing and responsive design validation
+- **End-to-End Flows**: Complete POS workflow testing for both platforms
+- **Performance Testing**: Load testing and user experience validation

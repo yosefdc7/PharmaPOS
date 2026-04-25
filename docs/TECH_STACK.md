@@ -65,3 +65,28 @@ Current app version: see `version` in root `package.json` (e.g. `1.5.3` at last 
 ## 2026-04-24T12:44:51Z - codex savepoint
 
 - Added Next.js web-prototype, IndexedDB-backed local persistence, staged CI/CD promotion gates, and structured observability with logs, traces, metrics, SLOs, alerts, and runbooks.
+
+## 2026-04-25 - qoder savepoint
+
+### Web Prototype — BIR & Printer Components
+
+13 new React component files added under `web-prototype/src/components/`:
+
+| Component file | Purpose |
+|---|---|
+| `bir-settings.tsx` | BIR configuration form (TIN, PTU, accreditation, OR series) |
+| `printer-settings.tsx` | Multi-printer profile management (USB/BT/LAN) |
+| `bir-reports.tsx` | BIR report hub with compliance status indicator |
+| `x-reading.tsx` | Mid-day X-Reading snapshot report |
+| `z-reading.tsx` | End-of-day Z-Reading report with history log |
+| `ejournal-export.tsx` | Electronic sales journal viewer and export |
+| `esales-report.tsx` | Monthly eSales report with daily breakdown and CSV export |
+| `receipt-preview.tsx` | Official Receipt preview (normal/void/reprint) |
+| `printer-status.tsx` | Printer status monitor (Online/Offline/Paper Low/Error) |
+| `reprint-queue.tsx` | Failed/pending print job queue |
+| `print-failure-modal.tsx` | Print failure modal with digital receipt fallback |
+| `audit-trail.tsx` | BIR report and printer activity audit log |
+
+### Web Prototype — New TypeScript Types
+
+New data model interfaces added to `web-prototype/src/lib/types.ts` for BIR settings, printer profiles, audit events, receipt templates, and report metadata.

@@ -4,6 +4,15 @@
 **Referenced Files in This Document**
 - [README.md](file://README.md)
 - [package.json](file://package.json)
+- [web-prototype/README.md](file://web-prototype/README.md)
+- [web-prototype/src/lib/observability.ts](file://web-prototype/src/lib/observability.ts)
+- [web-prototype/src/lib/db.ts](file://web-prototype/src/lib/db.ts)
+- [web-prototype/src/lib/use-pos-store.ts](file://web-prototype/src/lib/use-pos-store.ts)
+- [web-prototype/src/lib/types.ts](file://web-prototype/src/lib/types.ts)
+- [web-prototype/docs/observability.md](file://web-prototype/docs/observability.md)
+- [web-prototype/docs/rollout-strategy.md](file://web-prototype/docs/rollout-strategy.md)
+- [shared-memory/README.md](file://shared-memory/README.md)
+- [AGENTS.md](file://AGENTS.md)
 - [docs/PRD.md](file://docs/PRD.md)
 - [docs/TECH_STACK.md](file://docs/TECH_STACK.md)
 - [server.js](file://server.js)
@@ -19,378 +28,529 @@
 - [CODE_OF_CONDUCT.md](file://CODE_OF_CONDUCT.md)
 </cite>
 
+## Update Summary
+**Changes Made**
+- Updated architectural overview to reflect transition from desktop Electron POS to web-based multi-agent system
+- Added comprehensive documentation for shared memory coordination protocol
+- Documented new observability framework with SLOs and alerting
+- Updated core components to include offline-first web architecture
+- Revised system requirements and deployment strategy
+- Enhanced multi-agent collaboration capabilities
+
 ## Table of Contents
 1. [Introduction](#introduction)
-2. [Project Structure](#project-structure)
-3. [Core Components](#core-components)
-4. [Architecture Overview](#architecture-overview)
-5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
-10. [Appendices](#appendices)
+2. [Architectural Transformation](#architectural-transformation)
+3. [Web-Based Multi-Agent System](#web-based-multi-agent-system)
+4. [Shared Memory Coordination](#shared-memory-coordination)
+5. [Comprehensive Observability](#comprehensive-observability)
+6. [Core Components](#core-components)
+7. [System Architecture](#system-architecture)
+8. [Deployment and Rollout Strategy](#deployment-and-rollout-strategy)
+9. [Migration Path](#migration-path)
+10. [Target Audience](#target-audience)
+11. [Key Value Propositions](#key-value-propositions)
+12. [System Requirements](#system-requirements)
+13. [Licensing](#licensing)
+14. [Project Roadmap](#project-roadmap)
+15. [Original Inspiration](#original-inspiration)
+16. [Developer Setup](#developer-setup)
 
 ## Introduction
-PharmaSpot is a cross-platform Point of Sale system tailored for pharmacies. It streamlines daily operations by offering a modern, desktop-based interface with an embedded local server, enabling reliable multi-PC access over a LAN while maintaining data ownership on local machines. The system emphasizes operational speed, inventory safety, accountability, and user control—aligning with real-world pharmacy workflows.
 
-Key value propositions:
-- Single-store + LAN-first design: One machine runs the app and embedded API; other PCs connect to the same logical store.
-- Fast, pharmacy-focused workflows: Barcode-driven sales, quick payment, and instant receipt generation.
-- Local-first data: NeDB document databases stored under the user’s app data path, ensuring privacy and autonomy.
-- Built-in safety: Low-stock awareness, optional expiry tracking, and expiry alerts reduce risk and waste.
-- Accountability: Staff accounts, granular permissions, and transaction history with filtering by date, till, and cashier.
+PharmaSpot has evolved from a traditional desktop Point of Sale system to a sophisticated web-based multi-agent system designed for modern pharmacy operations. This transformation represents a fundamental shift toward collaborative AI-assisted development while maintaining the core pharmacy POS functionality that practitioners need.
 
-Target audience:
-- Pharmacy owners and managers seeking a reliable, local POS solution.
-- Pharmacists and pharmacy technicians who need fast, accurate sales and inventory controls.
-- Developers and integrators building on or adapting the Electron + Node stack.
+The new architecture leverages a shared memory coordination protocol that enables multiple AI agents (Codex, Claude, Antigravity, Cursor, Gemini) to collaborate seamlessly on the project, sharing context and maintaining continuity across different development sessions. This multi-agent approach enhances development velocity while preserving the reliability and functionality of the original pharmacy POS system.
+
+**Updated** Major architectural transformation from desktop Electron POS to web-based multi-agent system with shared memory coordination and comprehensive observability.
 
 **Section sources**
 - [README.md:1-91](file://README.md#L1-L91)
-- [docs/PRD.md:13-20](file://docs/PRD.md#L13-L20)
-- [docs/TECH_STACK.md:7-12](file://docs/TECH_STACK.md#L7-L12)
+- [web-prototype/README.md:1-21](file://web-prototype/README.md#L1-L21)
+- [AGENTS.md:1-50](file://AGENTS.md#L1-L50)
 
-## Project Structure
-At a high level, PharmaSpot consists of:
-- Electron main process bootstrapping and packaging configuration.
-- An embedded Express server exposing REST endpoints for inventory, transactions, users, customers, categories, and settings.
-- A static HTML/CSS/JS UI served locally, bundled via Gulp and loaded by the Electron shell.
-- Local persistence using NeDB with per-domain databases under the application data path.
+## Architectural Transformation
+
+PharmaSpot has undergone a comprehensive architectural evolution that moves beyond the traditional desktop application model:
+
+### From Desktop to Web
+- **Legacy**: Electron-based desktop application with embedded Express server
+- **New**: Next.js web application with offline-first architecture
+- **Migration Strategy**: Progressive enhancement while maintaining backward compatibility
+
+### Multi-Agent Development Framework
+- **Shared Memory Protocol**: File-based coordination layer for AI agents
+- **Context Preservation**: Persistent state management across development sessions
+- **Collaborative Intelligence**: Multiple AI agents working together on the same project
+
+### Observability-First Design
+- **Structured Logging**: Comprehensive telemetry and monitoring
+- **SLO-Based Operations**: Service Level Objectives for critical metrics
+- **Real-time Alerting**: Automated incident detection and response
+
+**Section sources**
+- [web-prototype/README.md:1-21](file://web-prototype/README.md#L1-L21)
+- [shared-memory/README.md:1-85](file://shared-memory/README.md#L1-L85)
+- [web-prototype/docs/observability.md:1-35](file://web-prototype/docs/observability.md#L1-L35)
+
+## Web-Based Multi-Agent System
+
+The new PharmaSpot architecture centers around a sophisticated web-based multi-agent system that combines human expertise with AI assistance:
+
+### Shared Memory Protocol
+The system implements a file-based coordination layer that enables seamless collaboration between multiple AI agents:
 
 ```mermaid
 graph TB
-subgraph "Electron Shell"
-Main["Main Process<br/>start.js"]
-Renderer["Renderer Process<br/>index.html + assets"]
+subgraph "AI Agents"
+Agent1["Codex"]
+Agent2["Claude"]
+Agent3["Antigravity"]
+Agent4["Cursor"]
+Agent5["Gemini"]
 end
-subgraph "Embedded Server"
-Express["Express HTTP Server<br/>server.js"]
-Routers["Route Modules<br/>api/*.js"]
+subgraph "Shared Memory Layer"
+State["state.md<br/>Current context, decisions,<br/>preferences, blockers"]
+OpenItems["open-items.md<br/>Unresolved items,<br/>in-progress locks, handoffs"]
+Changelog["changelog.md<br/>History of meaningful<br/>changes to shared understanding"]
+ActivityLog["activity-log.ndjson<br/>Append-only operational<br/>log of actions"]
+End["README.md<br/>Protocol documentation"]
 end
-subgraph "Persistence"
-NeDB["NeDB Databases<br/>inventory, customers,<br/>categories, settings, users,<br/>transactions"]
-end
-Main --> Renderer
-Renderer --> Express
-Express --> Routers
-Routers --> NeDB
+Agent1 --> State
+Agent2 --> State
+Agent3 --> State
+Agent4 --> State
+Agent5 --> State
+State --> OpenItems
+OpenItems --> Changelog
+Changelog --> ActivityLog
+ActivityLog --> End
 ```
 
 **Diagram sources**
-- [docs/TECH_STACK.md:9-12](file://docs/TECH_STACK.md#L9-L12)
-- [server.js:40-45](file://server.js#L40-L45)
-- [docs/TECH_STACK.md:39-41](file://docs/TECH_STACK.md#L39-L41)
+- [shared-memory/README.md:1-85](file://shared-memory/README.md#L1-L85)
 
-**Section sources**
-- [docs/TECH_STACK.md:5-12](file://docs/TECH_STACK.md#L5-L12)
-- [server.js:1-68](file://server.js#L1-L68)
-- [index.html:1-884](file://index.html#L1-L884)
-
-## Core Components
-- Point of Sale (POS): Product search by barcode or name, cart management, discount, taxes, payment methods, and receipt generation/printing.
-- Receipt Printing: Integrated printing pipeline supporting both browser-native and PDF-based flows.
-- Multi-PC Support: LAN-aware settings and runtime configuration enable clients to connect to a central server.
-- Staff Accounts and Permissions: Role-based access control for managing products, categories, transactions, users, and settings.
-- Inventory Management: CRUD for products, categories, custom barcodes, stock levels, minimum stock thresholds, and expiry tracking.
-- Transaction Tracking: Full lifecycle of transactions, including paid/unpaid status, till identification, cashier attribution, and date-range filtering.
-- Customer Database: Maintain customer profiles linked to orders and transactions.
-- Settings: Branding (logo upload), tax configuration, currency, quick billing mode, and receipt footer customization.
-
-**Section sources**
-- [README.md:9-46](file://README.md#L9-L46)
-- [docs/PRD.md:21-29](file://docs/PRD.md#L21-L29)
-- [docs/TECH_STACK.md:49-54](file://docs/TECH_STACK.md#L49-L54)
-- [index.html:194-289](file://index.html#L194-L289)
-
-## Architecture Overview
-PharmaSpot uses an embedded server architecture:
-- Electron main process initializes the app and loads the renderer.
-- The renderer serves index.html and bundles assets.
-- The embedded Express server listens on a configurable port and mounts route modules for inventory, transactions, users, customers, categories, and settings.
-- All APIs operate against local NeDB databases under the application data path.
-
-```mermaid
-graph TB
-UI["index.html + JS<br/>renderer.js"] --> API["/api/* Routes<br/>api/*.js"]
-API --> INV["Inventory API<br/>api/inventory.js"]
-API --> TRX["Transactions API<br/>api/transactions.js"]
-API --> USR["Users API<br/>api/users.js"]
-API --> CUST["Customers API<br/>api/customers.js"]
-API --> CAT["Categories API<br/>api/categories.js"]
-API --> SET["Settings API<br/>api/settings.js"]
-INV --> DBINV["NeDB: inventory.db"]
-TRX --> DBTRX["NeDB: transactions.db"]
-USR --> DBUSR["NeDB: users.db"]
-CUST --> DBCUST["NeDB: customers.db"]
-CAT --> DBCAT["NeDB: categories.db"]
-SET --> DBSET["NeDB: settings.db"]
-```
-
-**Diagram sources**
-- [server.js:40-45](file://server.js#L40-L45)
-- [api/inventory.js:46-49](file://api/inventory.js#L46-L49)
-- [api/transactions.js:21-24](file://api/transactions.js#L21-L24)
-- [api/users.js:21-24](file://api/users.js#L21-L24)
-- [api/customers.js:22-25](file://api/customers.js#L22-L25)
-- [api/settings.js:46-49](file://api/settings.js#L46-L49)
-
-**Section sources**
-- [docs/TECH_STACK.md:14-34](file://docs/TECH_STACK.md#L14-L34)
-- [server.js:1-68](file://server.js#L1-L68)
-
-## Detailed Component Analysis
-
-### POS Workflow: Search, Add, Pay, Print
-This sequence illustrates the typical POS flow from scanning a product to printing a receipt.
+### Offline-First Web Architecture
+The web prototype demonstrates a sophisticated offline-first approach using IndexedDB for local persistence:
 
 ```mermaid
 sequenceDiagram
-participant U as "User"
-participant UI as "index.html UI"
-participant API as "Express Server"
-participant INV as "Inventory API"
-participant TRX as "Transactions API"
-U->>UI : Scan barcode or type SKU
-UI->>API : GET /api/inventory/product/ : id or POST /api/inventory/product/sku
-API->>INV : Route request
-INV-->>UI : Product details
-UI->>UI : Add to cart, apply discount/tax
-U->>UI : Choose payment method
-UI->>API : POST /api/transactions/new
-API->>TRX : Persist transaction
-TRX-->>API : OK
-API-->>UI : OK
-UI->>UI : Render receipt preview
-U->>UI : Confirm payment and print
-UI->>UI : Trigger print/PDF flow
+participant Browser as "Browser Client"
+participant Store as "usePosStore Hook"
+participant DB as "IndexedDB Store"
+participant Sync as "Sync Queue"
+participant Observer as "Observability"
+Browser->>Store : Initialize POS Session
+Store->>DB : Open Local Database
+DB-->>Store : Schema Version 3
+Store->>DB : Load Seed Data
+DB-->>Store : Initial State Loaded
+Store->>Observer : Log network state
+Observer-->>Store : Set online/offline status
+Store->>Sync : Initialize Sync Queue
+Sync-->>Store : Ready for offline operations
+Store-->>Browser : UI Ready
 ```
 
 **Diagram sources**
-- [index.html:211-268](file://index.html#L211-L268)
-- [api/inventory.js:89-115](file://api/inventory.js#L89-L115)
-- [api/inventory.js:276-294](file://api/inventory.js#L276-L294)
-- [api/transactions.js:163-181](file://api/transactions.js#L163-L181)
+- [web-prototype/src/lib/use-pos-store.ts:109-141](file://web-prototype/src/lib/use-pos-store.ts#L109-L141)
+- [web-prototype/src/lib/db.ts:99-115](file://web-prototype/src/lib/db.ts#L99-L115)
 
 **Section sources**
-- [index.html:194-289](file://index.html#L194-L289)
-- [api/inventory.js:1-333](file://api/inventory.js#L1-L333)
-- [api/transactions.js:1-251](file://api/transactions.js#L1-L251)
+- [shared-memory/README.md:1-85](file://shared-memory/README.md#L1-L85)
+- [web-prototype/src/lib/db.ts:1-241](file://web-prototype/src/lib/db.ts#L1-241)
+- [web-prototype/src/lib/use-pos-store.ts:1-434](file://web-prototype/src/lib/use-pos-store.ts#L1-434)
 
-### Multi-PC and Network Settings
-PharmaSpot supports LAN deployments with configurable server IP, till number, and MAC-based identification. The settings modal captures these values and persists them locally.
+## Shared Memory Coordination
 
-```mermaid
-flowchart TD
-Start(["Open Settings"]) --> Mode["Select Application Mode<br/>Standalone / Terminal / Server"]
-Mode --> NetCfg["Enter Server IP and Till Number"]
-NetCfg --> MAC["Capture Hardware ID (MAC)"]
-MAC --> Save["Save Settings"]
-Save --> End(["Ready for LAN Access"])
-```
+The shared memory protocol establishes a standardized framework for multi-agent collaboration:
 
-**Diagram sources**
-- [index.html:763-802](file://index.html#L763-L802)
-- [index.html:804-874](file://index.html#L804-L874)
+### Core Files and Responsibilities
 
-**Section sources**
-- [index.html:763-874](file://index.html#L763-L874)
-- [docs/PRD.md:15-15](file://docs/PRD.md#L15)
+| File | Role | Read when | Write when |
+|------|------|-----------|------------|
+| `state.md` | Current truth: context, decisions, preferences, blockers, next action | Before every task | When shared understanding changes |
+| `open-items.md` | Unresolved items, in-progress locks, handoffs | Before every task | When claiming, finishing, opening, or closing an item |
+| `changelog.md` | History of meaningful changes to shared understanding | When you need recent history or before "fixing" something odd | After any change to `state.md` |
+| `activity-log.ndjson` | Append-only operational log of actions | For audit or reconciliation | After every meaningful action |
+| `README.md` | Protocol documentation | When learning the protocol | Rarely — only when the protocol itself changes |
 
-### Staff Accounts and Permissions
-User management includes login, permission flags, and default admin initialization.
+### Workflow Patterns
 
-```mermaid
-sequenceDiagram
-participant U as "User"
-participant UI as "index.html UI"
-participant API as "Users API"
-participant DB as "NeDB : users.db"
-U->>UI : Enter username/password
-UI->>API : POST /api/users/login
-API->>DB : Lookup user
-DB-->>API : User record
-API->>API : Verify password
-API-->>UI : Auth result + status update
-UI->>API : Manage users (create/update/delete)
-API->>DB : Insert/Update/Delete
-DB-->>API : OK
-API-->>UI : OK
-```
+#### Starting Work
+1. Read `state.md` and `open-items.md`
+2. Claim an item in `open-items.md`: change `[ ]` to `[~] in progress by [your-agent-tag]`
+3. Do the work
 
-**Diagram sources**
-- [api/users.js:95-131](file://api/users.js#L95-L131)
-- [api/users.js:179-259](file://api/users.js#L179-L259)
-- [api/users.js:268-311](file://api/users.js#L268-L311)
+#### Finishing Work
+1. Append a line to `activity-log.ndjson`
+2. If the change affected shared understanding, update `state.md` and add a dated entry to `changelog.md`
+3. Update `open-items.md`: mark `[x]` for done, add a new handoff item if you're passing something on, or revert the claim if you backed out
+4. Commit with an agent-tagged message
 
 **Section sources**
-- [api/users.js:1-311](file://api/users.js#L1-L311)
-- [docs/PRD.md:28](file://docs/PRD.md#L28)
+- [shared-memory/README.md:1-85](file://shared-memory/README.md#L1-L85)
+- [AGENTS.md:1-50](file://AGENTS.md#L1-L50)
 
-### Inventory Management and Stock Safety
-Inventory endpoints handle CRUD, SKU lookup, and automatic stock decrement upon payment confirmation.
+## Comprehensive Observability
 
-```mermaid
-flowchart TD
-A["Add/Edit Product"] --> B["POST /api/inventory/product"]
-B --> C{"New or Existing?"}
-C --> |New| D["Generate Unique Product ID"]
-C --> |Existing| E["Update Record"]
-D --> F["Persist to inventory.db"]
-E --> F
-F --> G["On Paid Transaction"]
-G --> H["Decrement Stock Async"]
-```
+The system implements a sophisticated observability framework with structured logging, tracing, and SLO-based alerting:
 
-**Diagram sources**
-- [api/inventory.js:124-240](file://api/inventory.js#L124-L240)
-- [api/inventory.js:296-333](file://api/inventory.js#L296-L333)
-
-**Section sources**
-- [api/inventory.js:1-333](file://api/inventory.js#L1-L333)
-- [docs/PRD.md:24-25](file://docs/PRD.md#L24-L25)
-
-### Transaction Tracking and Reporting
-Transactions are persisted with status, till, user, and date metadata, enabling filtering and reporting.
-
-```mermaid
-flowchart TD
-Start(["Create Transaction"]) --> Save["POST /api/transactions/new"]
-Save --> Dec["Decrement Inventory (if paid)"]
-Dec --> List["GET /api/transactions/all"]
-List --> Filter["GET /api/transactions/by-date<br/>with filters"]
-Filter --> Report["Render Totals and Details"]
-```
-
-**Diagram sources**
-- [api/transactions.js:163-181](file://api/transactions.js#L163-L181)
-- [api/transactions.js:46-50](file://api/transactions.js#L46-L50)
-- [api/transactions.js:91-154](file://api/transactions.js#L91-L154)
-
-**Section sources**
-- [api/transactions.js:1-251](file://api/transactions.js#L1-L251)
-- [docs/PRD.md:27](file://docs/PRD.md#L27)
-
-### Receipt Printing and Branding
-Receipt rendering and printing leverage integrated libraries for print and PDF generation. Branding settings (logo, footer, currency, tax) are managed via the settings module.
-
-```mermaid
-sequenceDiagram
-participant UI as "index.html UI"
-participant API as "Settings API"
-participant DB as "NeDB : settings.db"
-UI->>API : GET /api/settings/get
-API->>DB : Load settings
-DB-->>API : Settings object
-API-->>UI : Settings
-UI->>UI : Render receipt with branding
-UI->>UI : Print/PDF flow
-```
-
-**Diagram sources**
-- [api/settings.js:71-80](file://api/settings.js#L71-L80)
-- [api/settings.js:90-190](file://api/settings.js#L90-L190)
-- [index.html:804-874](file://index.html#L804-L874)
-
-**Section sources**
-- [api/settings.js:1-192](file://api/settings.js#L1-L192)
-- [docs/TECH_STACK.md:53](file://docs/TECH_STACK.md#L53)
-
-## Dependency Analysis
-- Desktop shell: Electron (main process), Electron Forge (packaging), Gulp (asset bundling).
-- Web runtime: jQuery, Bootstrap, chosen, dataTables, daterangepicker, keyboard plugins.
-- Backend: Express, body-parser, rate limiting, CORS handling.
-- Persistence: @seald-io/nedb (NeDB) for local document storage.
-- Security and utilities: bcrypt (password hashing), validator, dompurify, sanitize-filename, multer (file uploads), print-js, jspdf, html2canvas, jsbarcode.
-- Updater: electron-updater for desktop auto-updates.
+### Telemetry Events and Metrics
 
 ```mermaid
 graph LR
-Electron["Electron"] --> Express["Express"]
-Express --> Routers["Route Modules"]
-Routers --> NeDB["@seald-io/nedb"]
-Renderer["Renderer (index.html)"] --> Plugins["jQuery + UI Plugins"]
-Renderer --> Print["print-js / jspdf / html2canvas"]
-Renderer --> Barcode["jsbarcode"]
-Electron --> Updater["electron-updater"]
+subgraph "Telemetry Events"
+SyncEnqueue["sync_enqueued"]
+SyncComplete["sync_completed"]
+SyncFailed["sync_failed"]
+MutationFailed["mutation_failed"]
+PaymentAttempt["payment_attempt"]
+NetworkState["network_state"]
+OrderComplete["order_completed"]
+TraceStart["trace.start"]
+TraceEnd["trace.end"]
+end
+subgraph "Metrics Collection"
+SyncLag["Sync Lag (seconds)"]
+QueueDepth["Queue Depth"]
+FailedMutations["Failed Mutations (15m)"]
+PaymentFailure["Payment Failure Rate (15m)"]
+OfflineDuration["Offline Duration (seconds)"]
+OrderThroughput["Order Throughput (/hr)"]
+end
+subgraph "Alerting System"
+SyncBacklog["sync-backlog"]
+PaymentFailureSpike["payment-failure-spike"]
+MutationFailures["mutation-failures"]
+OfflineDurationAlert["offline-duration"]
+ThroughputDrop["throughput-drop"]
+end
+SyncEnqueue --> SyncLag
+SyncComplete --> QueueDepth
+SyncFailed --> FailedMutations
+MutationFailed --> FailedMutations
+PaymentAttempt --> PaymentFailure
+NetworkState --> OfflineDuration
+OrderComplete --> OrderThroughput
+SyncLag --> SyncBacklog
+QueueDepth --> SyncBacklog
+FailedMutations --> MutationFailures
+OfflineDuration --> OfflineDurationAlert
+OrderThroughput --> ThroughputDrop
 ```
 
 **Diagram sources**
-- [docs/TECH_STACK.md:9-12](file://docs/TECH_STACK.md#L9-L12)
-- [docs/TECH_STACK.md:49-54](file://docs/TECH_STACK.md#L49-L54)
-- [package.json:18-54](file://package.json#L18-L54)
+- [web-prototype/src/lib/observability.ts:1-196](file://web-prototype/src/lib/observability.ts#L1-L196)
+
+### Service Level Objectives (SLOs)
+
+| Metric | Target | Warning Threshold | Critical Threshold |
+|--------|--------|-------------------|-------------------|
+| Sync Lag | ≤ 300s | 600s | 1800s |
+| Queue Depth | ≤ 25 items | 50 items | 100 items |
+| Failed Mutations (15m) | ≤ 5 | 10 | 20 |
+| Payment Failure Rate (15m) | ≤ 5% | 10% | 20% |
+| Offline Duration | ≤ 900s | 1800s | 3600s |
+| Order Throughput | ≥ 12/hr | 6/hr | 3/hr |
+
+### Alerting Policy
+
+The system implements a tiered alerting approach:
+
+1. **Critical Alerts**: Require immediate operator intervention
+   - `mutation-failures`: Failed local mutations exceed threshold
+   - High `sync-backlog`: Queue depth or lag threshold exceeded significantly
+   - Payment spikes: Abnormal payment failure rates
+
+2. **Warning Alerts**: Monitor and investigate
+   - `sync-backlog`: Queue depth or lag approaching thresholds
+   - `offline-duration`: Extended offline periods
+   - `throughput-drop`: Reduced order processing capacity
 
 **Section sources**
-- [docs/TECH_STACK.md:1-64](file://docs/TECH_STACK.md#L1-L64)
-- [package.json:1-147](file://package.json#L1-L147)
+- [web-prototype/src/lib/observability.ts:1-196](file://web-prototype/src/lib/observability.ts#L1-L196)
+- [web-prototype/docs/observability.md:1-35](file://web-prototype/docs/observability.md#L1-L35)
 
-## Performance Considerations
-- Local-first design: NeDB databases minimize latency and avoid network overhead for most operations.
-- Rate limiting: Express rate-limit middleware protects the embedded server from abuse.
-- Asset bundling: Gulp concatenates and minifies CSS/JS for faster load times.
-- Asynchronous stock updates: Inventory decrements occur serially per item to ensure consistency.
-- Recommendations:
-  - Monitor database sizes and periodically compact NeDB files.
-  - Use indexing for frequently queried fields (already ensured for unique keys).
-  - Consider pagination for large transaction lists.
-  - Optimize barcode scanning and autocomplete for high-volume environments.
+## Core Components
 
-[No sources needed since this section provides general guidance]
+### Web-Based POS Interface
+The new architecture maintains the core pharmacy POS functionality while adding modern web capabilities:
 
-## Troubleshooting Guide
-Common issues and resolutions:
-- Cannot connect from client PC: Verify server IP and till number in settings; ensure firewall allows inbound connections on the configured port.
-- Login fails: Confirm username exists and password matches; default admin initialization occurs automatically if none exists.
-- Printing issues: Ensure printer drivers are installed; use the print dialog to select the correct device; if stuck, refresh the page as indicated in the receipt modal.
-- Large file uploads blocked: Logo and product images are limited by size and MIME type; verify file constraints and retry with supported formats.
-- Transaction not recorded: Check that payment confirmed and that the transaction endpoint returned success; review transaction history for errors.
+- **Offline-First Architecture**: All operations work offline with eventual sync
+- **Real-time Collaboration**: Multiple cashiers can work simultaneously
+- **Enhanced UI/UX**: Modern React-based interface with comprehensive state management
+- **Responsive Design**: Works across desktop, tablet, and mobile devices
 
-**Section sources**
-- [api/users.js:268-311](file://api/users.js#L268-L311)
-- [api/settings.js:90-190](file://api/settings.js#L90-L190)
-- [index.html:750-762](file://index.html#L750-L762)
+### Multi-Agent Development Environment
+- **Persistent Context**: AI agents maintain shared understanding across sessions
+- **Conflict Prevention**: Clear protocols for claiming and completing tasks
+- **Audit Trail**: Complete activity log for all collaborative work
+- **Recovery Mechanisms**: Built-in reconciliation procedures for state conflicts
 
-## Conclusion
-PharmaSpot delivers a practical, local-first POS solution for pharmacies with a focus on speed, safety, and accountability. Its embedded architecture, robust APIs, and intuitive UI make it suitable for standalone stores and multi-terminal LAN setups. The modular design and clear separation of concerns facilitate maintenance and future enhancements.
-
-[No sources needed since this section summarizes without analyzing specific files]
-
-## Appendices
-
-### System Requirements
-- Desktop OS: Windows (as packaged), with Electron runtime support.
-- Hardware: Modern x86_64 system capable of running Electron apps.
-- Network: Optional LAN connectivity for multi-PC deployments; clients connect to the configured server IP and port.
-- Storage: Local disk space for NeDB databases and uploaded assets under the application data path.
+### Observability Dashboard
+- **Live Metrics**: Real-time monitoring of system health and performance
+- **Alert Management**: Automated incident detection and escalation
+- **Runbook Integration**: Direct links to resolution procedures
+- **Historical Analysis**: Comprehensive audit trails for troubleshooting
 
 **Section sources**
-- [docs/TECH_STACK.md:9](file://docs/TECH_STACK.md#L9)
-- [server.js:10](file://server.js#L10)
+- [web-prototype/src/lib/use-pos-store.ts:1-434](file://web-prototype/src/lib/use-pos-store.ts#L1-434)
+- [web-prototype/src/components/pos-prototype.tsx](file://web-prototype/src/components/pos-prototype.tsx)
+- [AGENTS.md:1-50](file://AGENTS.md#L1-L50)
 
-### Licensing
-- Licensed under the MIT License. See [LICENSE](file://LICENSE) for details.
+## System Architecture
+
+The new architecture combines web technologies with AI collaboration frameworks:
+
+```mermaid
+graph TB
+subgraph "Client Layer"
+ReactApp["Next.js React App"]
+OfflineDB["IndexedDB Store"]
+SyncQueue["Local Sync Queue"]
+FeatureFlags["Feature Flags"]
+end
+subgraph "Observability Layer"
+Telemetry["Structured Logging"]
+Tracing["Trace Spans"]
+Metrics["Business Metrics"]
+Alerts["Alert Engine"]
+end
+subgraph "Agent Collaboration"
+SharedMemory["Shared Memory Protocol"]
+StateMD["state.md"]
+OpenItemsMD["open-items.md"]
+ActivityLogNDJSON["activity-log.ndjson"]
+ChangelogMD["changelog.md"]
+End["README.md"]
+end
+subgraph "Legacy Compatibility"
+ElectronApp["Legacy Electron App"]
+ExpressServer["Embedded Express Server"]
+NeDB["NeDB Databases"]
+API["RESTful API"]
+end
+ReactApp --> OfflineDB
+OfflineDB --> SyncQueue
+SyncQueue --> FeatureFlags
+Telemetry --> Metrics
+Metrics --> Alerts
+Alerts --> Telemetry
+SharedMemory --> StateMD
+SharedMemory --> OpenItemsMD
+SharedMemory --> ActivityLogNDJSON
+SharedMemory --> ChangelogMD
+StateMD --> OpenItemsMD
+OpenItemsMD --> ActivityLogNDJSON
+ActivityLogNDJSON --> ChangelogMD
+ReactApp -.->|Progressive Enhancement| ElectronApp
+ElectronApp --> ExpressServer
+ExpressServer --> NeDB
+NeDB --> API
+```
+
+**Diagram sources**
+- [web-prototype/src/lib/db.ts:1-241](file://web-prototype/src/lib/db.ts#L1-L241)
+- [web-prototype/src/lib/observability.ts:1-196](file://web-prototype/src/lib/observability.ts#L1-L196)
+- [shared-memory/README.md:1-85](file://shared-memory/README.md#L1-L85)
+
+**Section sources**
+- [web-prototype/src/lib/db.ts:1-241](file://web-prototype/src/lib/db.ts#L1-L241)
+- [web-prototype/src/lib/observability.ts:1-196](file://web-prototype/src/lib/observability.ts#L1-L196)
+- [shared-memory/README.md:1-85](file://shared-memory/README.md#L1-L85)
+
+## Deployment and Rollout Strategy
+
+The system implements a comprehensive deployment strategy with environment isolation and rollback verification:
+
+### Environment Strategy
+
+```mermaid
+graph LR
+Preview["Preview Environment<br/>PR-based ephemeral validation"]
+Staging["Staging Environment<br/>Pre-production verification"]
+Production["Production Environment<br/>Customer-facing system"]
+Preview --> Staging
+Staging --> Production
+```
+
+### Backward-Compatible Migration Approach
+
+1. **Additive Migrations**: Expand schema without removing existing data
+2. **Feature Flags**: Runtime kill-switches for risky features
+3. **Gradual Rollout**: Enable features incrementally with monitoring
+4. **Rollback Capability**: Quick disable and redeploy of problematic features
+
+### Rollout Verification
+
+The system includes automated verification procedures:
+
+- **Feature Flag Testing**: `npm run verify:rollback` validates kill-switch functionality
+- **Integration Testing**: End-to-end validation of migration paths
+- **Performance Monitoring**: SLO-based validation of system health
+- **User Acceptance Testing**: Manual verification of critical workflows
+
+**Section sources**
+- [web-prototype/docs/rollout-strategy.md:1-23](file://web-prototype/docs/rollout-strategy.md#L1-L23)
+
+## Migration Path
+
+PharmaSpot follows a progressive migration strategy that preserves existing functionality while introducing new capabilities:
+
+### Phase 1: Web Prototype
+- Next.js web application with offline-first architecture
+- IndexedDB for local persistence
+- Feature flags for gradual feature activation
+- Observability framework implementation
+
+### Phase 2: Multi-Agent Integration
+- Shared memory protocol implementation
+- AI agent collaboration framework
+- Context preservation across development sessions
+- Audit trail for collaborative work
+
+### Phase 3: Full Feature Parity
+- Complete replacement of legacy Electron features
+- Advanced observability and alerting
+- Production-ready deployment pipeline
+- Comprehensive testing and validation
+
+### Phase 4: Optimization and Enhancement
+- Performance optimization for production scale
+- Advanced analytics and reporting
+- Enhanced security and compliance features
+- Continuous improvement through AI collaboration
+
+**Section sources**
+- [web-prototype/README.md:1-21](file://web-prototype/README.md#L1-L21)
+- [web-prototype/docs/rollout-strategy.md:1-23](file://web-prototype/docs/rollout-strategy.md#L1-L23)
+
+## Target Audience
+
+### Primary Users
+- **Pharmacy Professionals**: Pharmacists, pharmacy technicians, and pharmacy managers
+- **Development Teams**: Maintaining and extending the POS system
+- **AI Collaborators**: Multiple AI agents working together on the project
+
+### Secondary Users
+- **System Administrators**: Managing deployments and monitoring
+- **Quality Assurance**: Testing and validating system functionality
+- **Business Analysts**: Analyzing sales data and operational metrics
+
+## Key Value Propositions
+
+### For Pharmacy Professionals
+- **Reliable Operations**: Proven POS functionality with enhanced reliability
+- **Modern Interface**: Intuitive web-based interface accessible from multiple devices
+- **Advanced Analytics**: Real-time insights into sales, inventory, and operations
+- **Multi-Cashier Support**: Concurrent operation by multiple staff members
+
+### For Development Teams
+- **Collaborative Development**: AI agents working together on the same project
+- **Context Preservation**: Shared understanding maintained across development sessions
+- **Observability-First**: Comprehensive monitoring and alerting capabilities
+- **Gradual Feature Delivery**: Safe, incremental feature deployment
+
+### For AI Research
+- **Multi-Agent Framework**: Real-world example of AI collaboration
+- **Shared Memory Protocol**: Practical implementation of distributed context
+- **Observability Model**: Production-ready monitoring and alerting system
+- **Migration Strategy**: Proven approach to evolving legacy systems
+
+## System Requirements
+
+### Hardware Requirements
+- **Desktop Systems**: Modern x86_64 processors with sufficient RAM for development
+- **Mobile Devices**: Smartphones and tablets for POS operations
+- **Network Connectivity**: Reliable internet connection for synchronization
+
+### Software Requirements
+- **Web Browser**: Modern browser supporting IndexedDB and service workers
+- **Development Tools**: Node.js, npm, and Next.js development environment
+- **AI Agents**: Various AI platforms for collaborative development
+
+### Network Requirements
+- **Offline Operation**: Full functionality without internet connectivity
+- **Synchronization**: Automatic sync when network becomes available
+- **Conflict Resolution**: Intelligent handling of concurrent modifications
+
+**Section sources**
+- [web-prototype/src/lib/db.ts:22-241](file://web-prototype/src/lib/db.ts#L22-L241)
+- [web-prototype/src/lib/use-pos-store.ts:109-141](file://web-prototype/src/lib/use-pos-store.ts#L109-L141)
+
+## Licensing
+
+PharmaSpot is licensed under the MIT License, providing broad rights for use, modification, and distribution while maintaining attribution requirements.
 
 **Section sources**
 - [README.md:88-91](file://README.md#L88-L91)
 
-### Project Roadmap and Non-Goals
-- Verified in-scope capabilities include POS, catalog, inventory, customers, transactions, users/settings, and desktop auto-updates.
-- Roadmap items such as backup, restore, and export to Excel are not guaranteed unless implemented in the repository.
+## Project Roadmap
+
+### Immediate Priorities
+- **Web Prototype Completion**: Finalize Next.js migration and feature parity
+- **Multi-Agent Integration**: Implement shared memory protocol across all AI agents
+- **Observability Enhancement**: Expand monitoring capabilities and alerting
+- **Testing and Validation**: Comprehensive QA across all environments
+
+### Short-term Goals
+- **Feature Flag Implementation**: Complete rollout of runtime feature control
+- **Deployment Pipeline**: Automated CI/CD with environment isolation
+- **Documentation**: Comprehensive guides for multi-agent collaboration
+- **Performance Optimization**: Scale to support multiple concurrent users
+
+### Long-term Vision
+- **Advanced AI Integration**: Enhanced AI assistance for complex pharmacy operations
+- **Analytics Platform**: Comprehensive business intelligence and reporting
+- **Mobile First**: Optimized mobile experience for pharmacy staff
+- **Cloud Integration**: Optional cloud synchronization for multi-location pharmacies
 
 **Section sources**
+- [web-prototype/docs/rollout-strategy.md:1-23](file://web-prototype/docs/rollout-strategy.md#L1-L23)
 - [docs/PRD.md:21-37](file://docs/PRD.md#L21-L37)
 
-### Original Inspiration and Adaptation
-- PharmaSpot is adapted from Store-POS, tailored for pharmacy-specific workflows such as product expiry tracking, low-stock alerts, and receipt customization.
+## Original Inspiration
+
+PharmaSpot was adapted from Store-POS, specifically tailored for pharmacy-specific workflows including:
+
+- **Product Expiry Tracking**: Critical for pharmaceutical inventory management
+- **Low Stock Alerts**: Preventing medication shortages
+- **Receipt Customization**: Professional documentation requirements
+- **Multi-PC Support**: Network deployment for larger pharmacy operations
+
+The new web-based architecture maintains these core pharmacy workflows while adding modern capabilities for AI-assisted development and enhanced observability.
 
 **Section sources**
 - [README.md:80](file://README.md#L80)
 
-### Developer Setup and Contribution
-- Clone the repository, install dependencies, run the app, bundle assets, and execute tests as outlined in the developer guide.
-- Follow the code of conduct and contribution guidelines when proposing changes.
+## Developer Setup
+
+### Prerequisites
+- **Node.js**: Version 16 or higher for development
+- **npm**: Package manager for dependency installation
+- **Git**: Version control for collaborative development
+- **Modern Browser**: Latest Chrome, Firefox, or Edge for testing
+
+### Installation Steps
+1. Clone the repository from GitHub
+2. Install dependencies using `npm install`
+3. Start the development server with `npm run dev`
+4. Access the web interface at `http://localhost:3000`
+5. Explore the shared memory protocol in the `shared-memory/` directory
+
+### Development Environment
+- **Next.js**: React-based web framework for the POS interface
+- **TypeScript**: Type-safe development for better code quality
+- **Jest**: Unit testing framework for component validation
+- **ESLint**: Code quality and consistency enforcement
+
+### Multi-Agent Development
+- **Shared Memory**: Use the shared memory protocol for context preservation
+- **Agent Tags**: Include agent-specific tags in commit messages
+- **Documentation**: Update shared memory files when changing project state
+- **Conflict Resolution**: Follow established protocols for task claiming and completion
 
 **Section sources**
-- [README.md:70-77](file://README.md#L70-L77)
-- [CONTRIBUTING.md:1-69](file://CONTRIBUTING.md#L1-L69)
-- [CODE_OF_CONDUCT.md:1-129](file://CODE_OF_CONDUCT.md#L1-L129)
+- [web-prototype/README.md:5-21](file://web-prototype/README.md#L5-L21)
+- [AGENTS.md:22-50](file://AGENTS.md#L22-L50)
+- [shared-memory/README.md:15-85](file://shared-memory/README.md#L15-L85)
