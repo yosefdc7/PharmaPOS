@@ -873,6 +873,214 @@ p {
   font-size: 22px;
 }
 
+.control-tower-page {
+  display: grid;
+  gap: 14px;
+}
+
+.control-tower-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.control-kpi {
+  display: grid;
+  gap: 8px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.control-kpi span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.control-kpi strong {
+  font-size: 24px;
+}
+
+.control-kpi .delta-up {
+  color: var(--success-text);
+}
+
+.control-kpi .delta-down {
+  color: var(--danger);
+}
+
+.control-tower-middle {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.control-chart,
+.control-side,
+.control-compliance-feed {
+  display: grid;
+  gap: 12px;
+}
+
+.control-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.control-head h2 {
+  margin-bottom: 0;
+  font-size: 18px;
+}
+
+.control-head small {
+  color: var(--muted);
+}
+
+.control-chart svg {
+  width: 100%;
+  height: 170px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(99, 91, 255, 0.12), rgba(99, 91, 255, 0.02));
+}
+
+.control-chart path {
+  fill: none;
+  stroke: var(--primary-dark);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.control-axis {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.control-axis span {
+  text-align: center;
+}
+
+.control-payment-split {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.control-payment-split article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.control-payment-split span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.control-payment-split strong {
+  font-size: 16px;
+}
+
+.control-donut-wrap {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.control-donut {
+  width: 110px;
+  height: 110px;
+  border-radius: 999px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.control-donut::after {
+  content: "";
+  width: 62px;
+  height: 62px;
+  border-radius: 999px;
+  background: var(--panel);
+  position: absolute;
+}
+
+.control-donut span {
+  position: relative;
+  z-index: 1;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.control-legend {
+  display: grid;
+  gap: 8px;
+}
+
+.control-legend article {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.control-inventory-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.inventory-box {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel-soft);
+}
+
+.inventory-box h3 {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.inventory-box p {
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+.control-feed-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.control-feed-grid article {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.control-feed-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.control-feed-grid strong {
+  font-size: 14px;
+  word-break: break-word;
+}
+
 .settings-page {
   display: grid;
   gap: 14px;
@@ -964,6 +1172,18 @@ p {
 
   .toolbar {
     grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px);
+  }
+
+  .control-tower-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-tower-middle {
+    grid-template-columns: 1fr;
+  }
+
+  .control-feed-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .toolbar select:last-child {
@@ -1061,6 +1281,17 @@ p {
 
   .totals {
     grid-template-columns: 1fr auto;
+  }
+
+  .control-tower-kpis,
+  .control-payment-split,
+  .control-feed-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .control-donut-wrap {
+    grid-template-columns: 1fr;
+    justify-items: center;
   }
 }
 

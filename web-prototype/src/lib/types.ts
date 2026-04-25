@@ -20,6 +20,7 @@ export type Product = {
   supplier: string;
   price: number;
   originalPrice?: number;
+  cost?: number;
   quantity: number;
   minStock: number;
   tracksStock: boolean;

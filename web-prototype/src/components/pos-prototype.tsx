@@ -19,8 +19,9 @@ import { ScpwdTransactionLog } from "./scpwd-transaction-log";
 import { ScpwdSummaryCardComponent } from "./scpwd-summary-card";
 import { PrescriptionSettingsPanel } from "./prescription-settings-panel";
 import { RxWorkspace } from "./rx-workspace";
+import { ControlTowerView } from "./control-tower";
 
-type ViewKey = "pos" | "products" | "customers" | "rx" | "settings" | "reports" | "sync";
+type ViewKey = "pos" | "products" | "customers" | "rx" | "control-tower" | "settings" | "reports" | "sync";
 type ProductSortKey = "recent" | "newest" | "oldest" | "top-sold";
 type InventorySortKey = "title" | "price" | "quantity" | "category" | "expiry";
 type InventorySortDirection = "asc" | "desc";
@@ -33,6 +34,7 @@ const views: { key: ViewKey; label: string }[] = [
   { key: "products", label: "Products" },
   { key: "customers", label: "Customers" },
   { key: "rx", label: "RX Workspace" },
+  { key: "control-tower", label: "Control Tower" },
   { key: "settings", label: "Settings" },
   { key: "reports", label: "Reports" },
   { key: "sync", label: "Sync Online" }
@@ -70,6 +72,7 @@ function buildProductDraft(overrides?: Partial<Product>): Product {
     supplier: overrides?.supplier || "",
     price: overrides?.price ?? 0,
     originalPrice: overrides?.originalPrice,
+    cost: overrides?.cost,
     quantity: overrides?.quantity ?? 0,
     minStock: overrides?.minStock ?? 0,
     tracksStock: overrides?.tracksStock ?? true,
@@ -480,6 +483,19 @@ export function PosPrototype() {
             updateRxSettings={(next) => store.updateRxSettings?.(next)}
           />
         ) : null}
+        {view === "control-tower" ? (
+          <ControlTowerView
+            transactions={store.transactions}
+            products={store.products}
+            settings={store.settings}
+            users={store.users}
+            syncQueue={store.syncQueue}
+            categories={store.categories}
+            rxPrescriptionDrafts={store.rxPrescriptionDrafts ?? []}
+            rxRedFlags={store.rxRedFlags ?? []}
+            rxInspectionSnapshot={store.getRxInspectionSnapshot?.()}
+          />
+        ) : null}
         {view === "reports" ? (
           <ReportsView
             transactions={store.transactions}
@@ -779,6 +795,7 @@ function ProductsView({
         ...draft,
         barcode: draft.barcode || String(Date.now()).slice(-6),
         expirationDate: draft.expirationDate || "N/A",
+        cost: typeof draft.cost === "number" ? draft.cost : draft.originalPrice ?? draft.price,
         isPrescription:
           draft.drugClassification === "DD, Rx" ||
           draft.drugClassification === "EDD, Rx" ||
@@ -1106,6 +1123,17 @@ function ProductsView({
                   value={draft.originalPrice ?? ""}
                   onChange={(event) =>
                     updateDraft("originalPrice", event.target.value === "" ? undefined : Number(event.target.value))
+                  }
+                />
+              </label>
+              <label>
+                Unit Cost
+                <input
+                  type="number"
+                  step="0.01"
+                  value={draft.cost ?? ""}
+                  onChange={(event) =>
+                    updateDraft("cost", event.target.value === "" ? undefined : Number(event.target.value))
                   }
                 />
               </label>
