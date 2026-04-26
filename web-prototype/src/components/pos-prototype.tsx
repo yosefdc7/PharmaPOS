@@ -2,8 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { isLowStock, isExpired, isNearExpiry, daysUntilExpiry, money } from "@/lib/calculations";
-import { usePosStore } from "@/lib/use-pos-store";
-import type { BirSettings, Category, Customer, PaymentMethod, Product, Settings, User } from "@/lib/types";
+import { resolveAccessibleView, usePosStore } from "@/lib/use-pos-store";
+import type { AppViewKey, BirSettings, Category, Customer, PaymentMethod, Product, Settings, User } from "@/lib/types";
 import { BirSettingsPanel } from "./bir-settings";
 import { PrinterSettingsPanel } from "./printer-settings";
 import { BirReportsPanel } from "./bir-reports";
@@ -23,7 +23,6 @@ import { PrescriptionSettingsPanel } from "./prescription-settings-panel";
 import { RxWorkspace } from "./rx-workspace";
 import { ControlTowerView } from "./control-tower";
 
-type ViewKey = "pos" | "products" | "customers" | "rx" | "control-tower" | "settings" | "reports" | "sync";
 type ProductSortKey = "recent" | "newest" | "oldest" | "top-sold";
 type InventorySortKey = "title" | "price" | "quantity" | "category" | "expiry";
 type InventorySortDirection = "asc" | "desc";
@@ -31,7 +30,7 @@ type CustomerSortKey = "newest" | "alphabetical";
 
 const inventorySortCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-const views: { key: ViewKey; label: string }[] = [
+const views: { key: AppViewKey; label: string }[] = [
   { key: "pos", label: "POS" },
   { key: "products", label: "Products" },
   { key: "customers", label: "Customers" },
@@ -96,10 +95,27 @@ function buildProductDraft(overrides?: Partial<Product>): Product {
   };
 }
 
+function buildUserPermissions(role: User["role"]): User["permissions"] {
+  const admin = role === "admin";
+  return {
+    products: admin,
+    categories: admin,
+    customers: true,
+    transactions: true,
+    rx: admin,
+    controlTower: admin,
+    users: admin,
+    settings: admin,
+    reports: admin,
+    sync: admin,
+  };
+}
+
 export function PosPrototype() {
   const store = usePosStore();
-  const [view, setView] = useState<ViewKey>("pos");
+  const [view, setView] = useState<AppViewKey>("pos");
   const [navOpen, setNavOpen] = useState(true);
+  const [loginError, setLoginError] = useState("");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [productSort, setProductSort] = useState<ProductSortKey>("recent");
@@ -115,6 +131,19 @@ export function PosPrototype() {
   const settings = store.settings;
   const symbol = settings?.currencySymbol || "$";
   const pendingSync = store.syncQueue.filter((item) => item.status === "pending").length;
+  const activeView = store.currentUser ? resolveAccessibleView(view, store.currentUser) : view;
+  const visibleViews = useMemo(
+    () => views.filter((item) => store.availableViews.includes(item.key)),
+    [store.availableViews]
+  );
+
+  useEffect(() => {
+    if (!store.currentUser) return;
+    const nextView = resolveAccessibleView(view, store.currentUser);
+    if (nextView !== view) {
+      setView(nextView);
+    }
+  }, [store.currentUser, view]);
 
   const filteredProducts = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -177,11 +206,25 @@ export function PosPrototype() {
         <section className="login-card">
           <h1>PharmaPOS PH Web POS</h1>
           <p>Enter credentials to log in.</p>
-          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await store.login(String(fd.get("username")), String(fd.get("password"))); }}>
-            <input name="username" placeholder="Username" defaultValue="admin" />
-            <input name="password" type="password" placeholder="Password" defaultValue="admin" />
+          {store.storagePersistence !== "unknown" ? (
+            <p>Storage protection: {store.storagePersistence}</p>
+          ) : null}
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setLoginError("");
+              const fd = new FormData(e.currentTarget);
+              const success = await store.login(String(fd.get("username") ?? ""), String(fd.get("password") ?? ""));
+              if (!success) {
+                setLoginError("Invalid username or password.");
+              }
+            }}
+          >
+            <input name="username" placeholder="Username" autoComplete="username" />
+            <input name="password" type="password" placeholder="Password" autoComplete="current-password" />
             <button type="submit">Log in</button>
           </form>
+          {loginError ? <p className="error-copy">{loginError}</p> : null}
         </section>
       </main>
     );
@@ -204,8 +247,13 @@ export function PosPrototype() {
     setHoldReference("");
   }
 
-  function setViewAndMaybeCloseNav(nextView: ViewKey) {
-    setView(nextView);
+  function setViewAndMaybeCloseNav(nextView: AppViewKey) {
+    if (!store.canAccessView(nextView)) {
+      const fallback = resolveAccessibleView(nextView, store.currentUser);
+      setView(fallback);
+    } else {
+      setView(nextView);
+    }
     if (window.matchMedia("(max-width: 760px)").matches) {
       setNavOpen(false);
     }
@@ -222,10 +270,10 @@ export function PosPrototype() {
           </div>
         </div>
         <nav>
-          {views.map((item) => (
+          {visibleViews.map((item) => (
             <button
               key={item.key}
-              className={view === item.key ? "active" : ""}
+              className={activeView === item.key ? "active" : ""}
               onClick={() => setViewAndMaybeCloseNav(item.key)}
             >
               {item.label}
@@ -247,12 +295,15 @@ export function PosPrototype() {
               {navOpen ? "â€¹" : "â€º"}
             </button>
             <div>
-              <h1>{views.find((item) => item.key === view)?.label}</h1>
-              <p>{store.online ? "Online-ready" : "Offline mode"} with SQLite backend</p>
+              <h1>{views.find((item) => item.key === activeView)?.label}</h1>
+              <p>{store.online ? "Online-ready" : "Offline mode"} with local IndexedDB runtime</p>
             </div>
           </div>
           <div className="topbar-actions">
             <PrinterStatusIndicator />
+            <span className={`status ${store.storagePersistence === "granted" ? "online" : "offline"}`}>
+              Storage {store.storagePersistence === "granted" ? "protected" : store.storagePersistence}
+            </span>
             <label className="select-label">
               User
               <select value={store.currentUser.username} onChange={(event) => store.switchUser(event.target.value)}>
@@ -266,10 +317,11 @@ export function PosPrototype() {
             <button className={store.online ? "status online" : "status offline"} onClick={() => store.setForcedOffline(!store.forcedOffline)}>
               {store.online ? "Online" : "Offline"}
             </button>
+            <button type="button" onClick={store.logout}>Log out</button>
           </div>
         </header>
 
-        {view === "pos" ? (
+        {activeView === "pos" ? (
           <section className="pos-grid">
             <section className="product-workspace panel">
               <div className="toolbar">
@@ -455,11 +507,11 @@ export function PosPrototype() {
           </section>
         ) : null}
 
-        {view === "products" ? (
+        {activeView === "products" ? (
           <ProductsView products={store.products} categories={store.categories} symbol={symbol} save={store.saveEntity} remove={store.removeEntity} alertDays={settings?.expiryAlertDays ?? 30} />
         ) : null}
-        {view === "customers" ? <CustomersView customers={store.customers} save={store.saveEntity} remove={store.removeEntity} /> : null}
-        {view === "rx" ? (
+        {activeView === "customers" ? <CustomersView customers={store.customers} save={store.saveEntity} remove={store.removeEntity} /> : null}
+        {activeView === "rx" ? (
           <RxWorkspace
             products={store.products}
             cart={store.cart}
@@ -475,19 +527,20 @@ export function PosPrototype() {
             onClearFlag={(id) => store.clearRxRedFlag?.(id)}
           />
         ) : null}
-        {view === "settings" ? (
+        {activeView === "settings" ? (
           <SettingsView
             settings={settings}
             categories={store.categories}
             users={store.users}
             save={store.saveEntity}
+            saveUserAccount={store.saveUserAccount}
             remove={store.removeEntity}
             reset={store.resetData}
             rxSettings={store.rxSettings ?? { ddEddLowStockThreshold: 10, profileRetentionYears: 10, hardBlockPrototypeReset: true }}
             updateRxSettings={(next) => store.updateRxSettings?.(next)}
           />
         ) : null}
-        {view === "control-tower" ? (
+        {activeView === "control-tower" ? (
           <ControlTowerView
             transactions={store.transactions}
             products={store.products}
@@ -500,7 +553,7 @@ export function PosPrototype() {
             rxInspectionSnapshot={store.getRxInspectionSnapshot?.()}
           />
         ) : null}
-        {view === "reports" ? (
+        {activeView === "reports" ? (
           <ReportsView
             transactions={store.transactions}
             products={store.products}
@@ -514,7 +567,7 @@ export function PosPrototype() {
             scPwdAlerts={store.scPwdAlerts}
           />
         ) : null}
-        {view === "sync" ? (
+        {activeView === "sync" ? (
           <SyncView
             online={store.online}
             queue={store.syncQueue}
@@ -1430,6 +1483,7 @@ function SettingsView({
   categories,
   users,
   save,
+  saveUserAccount,
   remove,
   reset,
   rxSettings,
@@ -1439,12 +1493,22 @@ function SettingsView({
   categories: Category[];
   users: User[];
   save: ReturnType<typeof usePosStore>["saveEntity"];
+  saveUserAccount: ReturnType<typeof usePosStore>["saveUserAccount"];
   remove: ReturnType<typeof usePosStore>["removeEntity"];
   reset: ReturnType<typeof usePosStore>["resetData"];
   rxSettings: ReturnType<typeof usePosStore>["rxSettings"];
   updateRxSettings: ReturnType<typeof usePosStore>["updateRxSettings"];
 }) {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("store");
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [userFormError, setUserFormError] = useState("");
+  const [userForm, setUserForm] = useState({
+    username: "",
+    fullname: "",
+    role: "cashier" as User["role"],
+    password: "",
+    confirmPassword: ""
+  });
 
   async function submitSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1477,26 +1541,62 @@ function SettingsView({
 
   async function submitUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = readForm(event.currentTarget);
-    const admin = data.role === "admin";
-    await save(
-      "users",
-      {
-        id: crypto.randomUUID(),
-        username: data.username,
-        fullname: data.fullname,
-        role: admin ? "admin" : "cashier",
-        permissions: {
-          products: admin,
-          categories: admin,
-          transactions: true,
-          users: admin,
-          settings: admin
-        }
-      },
-      "user"
-    );
-    event.currentTarget.reset();
+    setUserFormError("");
+    const password = userForm.password.trim();
+    const confirmPassword = userForm.confirmPassword.trim();
+    const isEditing = Boolean(editingUserId);
+
+    if (!isEditing && !password) {
+      setUserFormError("Password is required when creating a user.");
+      return;
+    }
+
+    if ((password || confirmPassword) && password !== confirmPassword) {
+      setUserFormError("Password confirmation must match.");
+      return;
+    }
+
+    await saveUserAccount({
+      id: editingUserId ?? undefined,
+      username: userForm.username,
+      fullname: userForm.fullname,
+      role: userForm.role,
+      permissions: buildUserPermissions(userForm.role),
+      password: password || undefined
+    });
+
+    setEditingUserId(null);
+    setUserForm({
+      username: "",
+      fullname: "",
+      role: "cashier",
+      password: "",
+      confirmPassword: ""
+    });
+  }
+
+  function startEditUser(user: User) {
+    setEditingUserId(user.id);
+    setUserFormError("");
+    setUserForm({
+      username: user.username,
+      fullname: user.fullname,
+      role: user.role,
+      password: "",
+      confirmPassword: ""
+    });
+  }
+
+  function cancelUserEdit() {
+    setEditingUserId(null);
+    setUserFormError("");
+    setUserForm({
+      username: "",
+      fullname: "",
+      role: "cashier",
+      password: "",
+      confirmPassword: ""
+    });
   }
 
   return (
@@ -1629,23 +1729,67 @@ function SettingsView({
         <section className="settings-tab-content">
           <div className="settings-subgrid">
             <form className="panel form-grid" onSubmit={submitUser}>
-              <h2>Add user</h2>
+              <h2>{editingUserId ? "Edit user" : "Add user"}</h2>
               <label className="input-label">
                 Username
-                <input name="username" required placeholder="e.g. jsmith" />
+                <input
+                  name="username"
+                  required
+                  placeholder="e.g. jsmith"
+                  value={userForm.username}
+                  onChange={(event) => setUserForm((current) => ({ ...current, username: event.target.value }))}
+                />
               </label>
               <label className="input-label">
                 Full name
-                <input name="fullname" required placeholder="e.g. Jane Smith" />
+                <input
+                  name="fullname"
+                  required
+                  placeholder="e.g. Jane Smith"
+                  value={userForm.fullname}
+                  onChange={(event) => setUserForm((current) => ({ ...current, fullname: event.target.value }))}
+                />
               </label>
               <label className="input-label">
                 Role
-                <select name="role">
+                <select
+                  name="role"
+                  value={userForm.role}
+                  onChange={(event) =>
+                    setUserForm((current) => ({ ...current, role: event.target.value as User["role"] }))
+                  }
+                >
                   <option value="cashier">Cashier</option>
                   <option value="admin">Admin</option>
                 </select>
               </label>
-              <button className="primary">Save user</button>
+              <label className="input-label">
+                Password
+                <input
+                  name="password"
+                  type="password"
+                  placeholder={editingUserId ? "Leave blank to keep current password" : "Set initial password"}
+                  value={userForm.password}
+                  onChange={(event) => setUserForm((current) => ({ ...current, password: event.target.value }))}
+                />
+              </label>
+              <label className="input-label">
+                Confirm password
+                <input
+                  name="confirmPassword"
+                  type="password"
+                  placeholder={editingUserId ? "Repeat new password if changing it" : "Repeat password"}
+                  value={userForm.confirmPassword}
+                  onChange={(event) => setUserForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                />
+              </label>
+              {userFormError ? <p className="error-copy">{userFormError}</p> : null}
+              <div className="settings-actions">
+                <button className="primary">{editingUserId ? "Update user" : "Save user"}</button>
+                {editingUserId ? (
+                  <button type="button" onClick={cancelUserEdit}>Cancel</button>
+                ) : null}
+              </div>
             </form>
             <DataPanel title={`Users (${users.length})`}>
               {users.map((user) => (
@@ -1653,6 +1797,7 @@ function SettingsView({
                   <strong>{user.fullname}</strong>
                   <span>{user.username}</span>
                   <span className="role-badge">{user.role}</span>
+                  <button type="button" onClick={() => startEditUser(user)}>Edit</button>
                   {user.id !== "usr-admin" ? <button className="danger" onClick={() => remove("users", user.id, "user")}>Delete</button> : null}
                 </article>
               ))}

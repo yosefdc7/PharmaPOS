@@ -44,12 +44,14 @@
 
 ## Update Summary
 **Changes Made**
-- Enhanced POS interface with simplified stock management controls including direct "mark expired" functionality
-- Improved product editor with unified container design and streamlined delete confirmation flow
-- Implemented comprehensive responsive design improvements across mobile and tablet breakpoints
-- Restructured stock adjustment functionality with question mark icon-based interface replacing separate +/- buttons
-- Enhanced settings interface with responsive tab layout for better mobile experience
-- Improved testing infrastructure with vi.spyOn for window.confirm mocking in test suite
+- Phase 1 backend wiring: 8 new IndexedDB stores (birSettings, printerProfiles, auditLog, printerActivity, prescriptions, rxSettings, xReadings, zReadings) with DB schema v5 migration
+- BIR settings, Printer profiles, Audit trail, X/Z-Reading, and Prescriptions now load/save to IndexedDB instead of mock state
+- `completeSale` reads BIR settings for OR series tracking, auto-increments OR number, blocks when series exhausted, and attempts thermal print on completion
+- Printer subsystem: ESC/POS builder, receipt content generation, Web Serial / Web Bluetooth / LAN bridge backends, durable print queue persisted to IndexedDB reprintQueue store
+- Printer config module: role-based default resolution (`defaultForOr`, `defaultForReport`), receipt layout management
+- LAN Printer Bridge server (`bridge/bridge-server.js`) for forwarding ESC/POS commands over TCP
+- Phase 2 experimental: 24 Next.js API routes with SQLite/@libsql backend in `src/app/api/` and `src/lib/server/` (reference only, not the default runtime path)
+- New tests: printer-config, print-queue, receipt-content, receipt-preview, reprint-queue, plus 12 unit tests for OR series and X-Reading computation
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -74,15 +76,13 @@
 ## Introduction
 The Next.js Web POS Prototype is a comprehensive point-of-sale system built with React and Next.js, designed specifically for pharmacy environments. This prototype demonstrates a complete offline-first POS solution with real-time synchronization capabilities, inventory management, customer tracking, and advanced reporting features. The system is architected around a modern React pattern using custom hooks for state management and IndexedDB for persistent local storage.
 
-**Updated** The prototype now includes extensive pharmaceutical-specific features including a comprehensive RX workspace, SC/PWD discount system, BIR compliance framework, enhanced printer management, and detailed audit trail functionality. These additions transform the system from a general retail POS into a fully-featured pharmacy management solution compliant with Philippine pharmaceutical regulations.
+**Updated** The prototype has been significantly enhanced with Phase 1 backend wiring that connects all UI panels to IndexedDB persistence. BIR settings, printer profiles, audit trail entries, X/Z-Reading reports, and prescription data now load and save to dedicated IndexedDB stores instead of mock useState data. The `completeSale` flow reads BIR settings for OR series tracking, auto-increments the OR number on each sale, and blocks checkout when the OR series is exhausted.
 
-**Updated** The deployment configuration has been enhanced with Vercel's multi-step build process, establishing a complete static export pipeline for production deployment. The Next.js configuration has been updated from 'standalone' to 'export' mode, enabling static site generation for optimal performance and scalability. The Vercel configuration now uses streamlined build commands with proper subdirectory handling.
+**Updated** A complete thermal printer subsystem has been added under `web-prototype/src/lib/printer/`. This includes ESC/POS command generation, receipt content builders for all receipt variants (normal, void, reprint, x-reading, z-reading, daily-summary), and three connection backends: Web Serial API (USB), Web Bluetooth API, and a LAN bridge service. The print queue is now durable, persisting jobs to an IndexedDB `reprintQueue` store with configurable default printers per role.
 
-**Updated** Comprehensive frontend system documentation has been added to the repository wiki, including observability guidelines, deployment rollout strategies, and operational runbooks for system maintenance and troubleshooting.
+**Updated** The `completeSale` function now automatically resolves the default OR printer from IndexedDB profiles, builds ESC/POS receipt commands, and attempts to print. On failure, the job is queued to the durable reprint queue and a print failure modal is shown to the user.
 
-**Updated** Recent enhancements include simplified stock management controls in the POS interface, improved product editor with unified container design, and comprehensive responsive design improvements across mobile and tablet breakpoints. These changes focus on enhancing user experience and operational efficiency in pharmacy environments.
-
-**Updated** The stock management interface has been restructured with a question mark icon-based system that replaces traditional +/- buttons, providing a more streamlined and accessible user experience. The settings interface now features a responsive tab layout that adapts to different screen sizes for better mobile usability.
+**Updated** Phase 2 experimental backend (SQLite via `@libsql/client` and Turso) is present in `src/app/api/` and `src/lib/server/` with 24 API routes covering products, categories, customers, users, transactions, held orders, settings, payments, refunds, sync queue, and feature flags. This is reference work for future cloud migration, not the default runtime path.
 
 The prototype showcases key pharmaceutical POS requirements including product expiry tracking, low stock alerts, customer database management, transaction history with filtering capabilities, prescription dispensing enforcement, dangerous drug tracking, and comprehensive compliance reporting. Built with TypeScript for type safety and Vitest for testing, the system provides a robust foundation for enterprise-scale pharmacy management applications.
 
@@ -260,24 +260,31 @@ Core responsibilities:
 - Telemetry and observability event logging
 
 ### Data Persistence Layer
-Built on IndexedDB for reliable offline data storage with automatic synchronization capabilities.
+Built on IndexedDB for reliable offline data storage with automatic synchronization capabilities. The database is at schema version 5 with 18 object stores.
 
-Supported entities:
-- Products with expiry tracking and stock management
-- Categories for product organization
-- Customers with contact information
-- Users with role-based permissions
-- Transactions with payment details
-- Settings for store configuration
-- Sync queue for offline operations
-- **New** Prescription drafts and refusals
-- **New** Pharmacy-specific data structures
-- **New** Compliance reporting data
+Supported IndexedDB stores:
+- `products` - Product catalog with expiry tracking, stock management, and drug classification
+- `categories` - Product category organization
+- `customers` - Customer contact information and history
+- `users` - User accounts with role-based permissions
+- `transactions` - Transaction records with payment details and SC/PWD metadata
+- `settings` - Store configuration singleton
+- `heldOrders` - Parked orders for later resumption
+- `syncQueue` - Offline operation queue for synchronization
+- `meta` - Feature flags and schema version metadata
+- `birSettings` - BIR compliance configuration (TIN, PTU, OR series)
+- `printerProfiles` - Thermal printer configurations with role defaults
+- `auditLog` - BIR report and compliance event audit entries
+- `printerActivity` - Print job success/failure tracking
+- `prescriptions` - Prescription drafts and dispensing records
+- `rxSettings` - Prescription/RX workspace configuration
+- `xReadings` - Generated X-Reading reports
+- `zReadings` - Generated Z-Reading reports
+- `reprintQueue` - Durable print job queue with Base64-encoded ESC/POS commands
 
 **Section sources**
-- [web-prototype/src/components/pos-prototype.tsx:58-427](file://web-prototype/src/components/pos-prototype.tsx#L58-L427)
-- [web-prototype/src/lib/use-pos-store.ts:51-433](file://web-prototype/src/lib/use-pos-store.ts#L51-L433)
-- [web-prototype/src/lib/db.ts:22-46](file://web-prototype/src/lib/db.ts#L22-L46)
+- [web-prototype/src/lib/db.ts:34-93](file://web-prototype/src/lib/db.ts#L34-L93)
+- [web-prototype/src/lib/use-pos-store.ts:73-122](file://web-prototype/src/lib/use-pos-store.ts#L73-L122)
 
 ## Architecture Overview
 
@@ -723,18 +730,40 @@ The BIR compliance system provides complete tax reporting and regulatory complia
 ## Enhanced Printer Management
 
 ### Multi-Printer Architecture
-The printer management system supports multiple printer configurations with role-based assignment and comprehensive status monitoring.
+The printer management system supports multiple printer configurations with role-based assignment, comprehensive status monitoring, and real thermal printer output via ESC/POS commands.
 
 **Printer Capabilities:**
-- **Multi-Printer Support**: USB, Bluetooth, and LAN connectivity options
-- **Role-Based Assignment**: Separate OR printers and report printers
+- **Multi-Printer Support**: USB (Web Serial API), Bluetooth (Web Bluetooth API), and LAN (HTTP bridge) connectivity
+- **Role-Based Defaults**: Separate default OR printer and default report printer (`defaultForOr`, `defaultForReport` on each profile)
+- **Printer Config Module** (`printer-config.ts`): `resolvePrinterForRole()` selects the best printer for a given role, `applyPrinterRoleDefault()` sets the default for a role across all profiles
+- **Durable Print Queue** (`print-queue.ts`): Print jobs are persisted to the IndexedDB `reprintQueue` store with Base64-encoded ESC/POS commands; jobs expire after 5 minutes
+- **ESC/POS Builder** (`escpos-commands.ts`): Generates raw thermal printer commands for text, alignment, bold, double-height, barcodes (CODE128, EAN13), QR codes, cuts, and cash drawer pulses
+- **Receipt Content Builder** (`receipt-content.ts`): Builds complete ESC/POS byte arrays for receipt variants: normal, void, reprint, x-reading, z-reading, daily-summary; supports 58mm and 80mm paper widths
+- **LAN Printer Bridge** (`bridge/bridge-server.js`): Lightweight Node.js HTTP server that receives Base64 ESC/POS commands and forwards them over raw TCP to a thermal printer
 - **Status Monitoring**: Online/offline/paper-low/error states
-- **Receipt Customization**: Logo upload, header/footer configuration
-- **Auto-Detection**: USB printer discovery and automatic configuration
+- **Receipt Customization**: Logo URL, header/footer lines, max receipt lines, auto-condense
+
+**Printer Subsystem Files:**
+
+| File | Purpose |
+|---|---|
+| `printer-config.ts` | Role resolution, defaults, receipt layout management |
+| `print-queue.ts` | Durable print queue with IndexedDB persistence |
+| `printer-service.ts` | Abstract printer backend interface |
+| `escpos-commands.ts` | ESC/POS command builder |
+| `receipt-content.ts` | Receipt content generation for all variants |
+| `web-serial-service.ts` | USB connection via Web Serial API |
+| `web-bluetooth-service.ts` | Bluetooth connection via Web Bluetooth API |
+| `lan-bridge-service.ts` | LAN connection via HTTP bridge server |
+| `bridge/bridge-server.js` | Node.js TCP bridge for LAN printers |
 
 **Section sources**
-- [web-prototype/src/components/printer-settings.tsx:1-418](file://web-prototype/src/components/printer-settings.tsx#L1-L418)
-- [web-prototype/src/lib/types.ts:334-358](file://web-prototype/src/lib/types.ts#L334-L358)
+- [web-prototype/src/lib/printer/index.ts:1-28](file://web-prototype/src/lib/printer/index.ts#L1-L28)
+- [web-prototype/src/lib/printer/printer-config.ts:1-107](file://web-prototype/src/lib/printer/printer-config.ts#L1-L107)
+- [web-prototype/src/lib/printer/print-queue.ts:1-92](file://web-prototype/src/lib/printer/print-queue.ts#L1-L92)
+- [web-prototype/src/components/printer-settings.tsx:1-481](file://web-prototype/src/components/printer-settings.tsx#L1-L481)
+- [web-prototype/src/lib/types.ts:335-373](file://web-prototype/src/lib/types.ts#L335-L373)
+- [bridge/bridge-server.js:1-107](file://bridge/bridge-server.js#L1-L107)
 
 ## Comprehensive Audit Trail
 

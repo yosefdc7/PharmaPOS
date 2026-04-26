@@ -36,6 +36,8 @@ The BIR Compliance System is a comprehensive Point of Sale (POS) solution specif
 
 The system operates as a hybrid architecture combining a traditional Electron desktop application with a modern web-based prototype, providing both local desktop functionality and cloud-ready web capabilities. It features multi-PC support, advanced transaction tracking, comprehensive inventory management, and robust security measures to ensure compliance with Philippine tax regulations.
 
+**Updated** The web prototype BIR compliance features now persist to IndexedDB. The `birSettings` store holds TIN, PTU, machine serial, accreditation number, and OR series configuration. The `completeSale` function reads BIR settings to assign OR numbers, auto-increments `currentOrNumber`, and blocks checkout when the OR series is exhausted. X-Reading and Z-Reading reports are computed from real transaction data in IndexedDB and persisted to `xReadings` and `zReadings` stores with audit trail entries.
+
 ## System Architecture
 
 The BIR Compliance System follows a modular microservice architecture with clear separation of concerns:

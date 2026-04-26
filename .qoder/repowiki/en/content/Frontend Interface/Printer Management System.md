@@ -15,8 +15,15 @@
 - [db.ts](file://web-prototype/src/lib/db.ts)
 - [globals.css](file://web-prototype/src/app/globals.css)
 - [TECH_STACK.md](file://docs/TECH_STACK.md)
-- [state.md](file://shared-memory/state.md)
-- [open-items.md](file://shared-memory/open-items.md)
+- [printer-config.ts](file://web-prototype/src/lib/printer/printer-config.ts)
+- [print-queue.ts](file://web-prototype/src/lib/printer/print-queue.ts)
+- [printer-service.ts](file://web-prototype/src/lib/printer/printer-service.ts)
+- [escpos-commands.ts](file://web-prototype/src/lib/printer/escpos-commands.ts)
+- [receipt-content.ts](file://web-prototype/src/lib/printer/receipt-content.ts)
+- [web-serial-service.ts](file://web-prototype/src/lib/printer/web-serial-service.ts)
+- [web-bluetooth-service.ts](file://web-prototype/src/lib/printer/web-bluetooth-service.ts)
+- [lan-bridge-service.ts](file://web-prototype/src/lib/printer/lan-bridge-service.ts)
+- [bridge-server.js](file://bridge/bridge-server.js)
 </cite>
 
 ## Table of Contents
@@ -39,6 +46,12 @@ The Printer Management System is a comprehensive thermal printer solution design
 
 The system integrates seamlessly with the broader PharmaSpot POS ecosystem, providing both desktop and web-based printer management capabilities. It supports various printer connection types including USB, Bluetooth, and LAN networks, with ESC/POS command compatibility for broad hardware vendor support.
 
+**Updated** The printer subsystem has been significantly expanded with a complete ESC/POS command generation layer (`web-prototype/src/lib/printer/`). Receipt content is now built as raw `Uint8Array` byte streams for all receipt variants (normal, void, reprint, x-reading, z-reading, daily-summary). Three connection backends are implemented: Web Serial API for USB, Web Bluetooth API for Bluetooth, and a LAN bridge HTTP service for network printers. A separate Node.js bridge server (`bridge/bridge-server.js`) forwards ESC/POS commands over raw TCP to LAN printers.
+
+**Updated** Printer profiles now support role-based defaults with `defaultForOr` and `defaultForReport` fields. The `resolvePrinterForRole()` function in `printer-config.ts` automatically selects the best available printer for a given role (OR receipt or report). The `applyPrinterRoleDefault()` function ensures only one printer is marked default per role.
+
+**Updated** The print queue is now durable, persisting jobs to an IndexedDB `reprintQueue` store. Each job contains Base64-encoded ESC/POS commands, the target printer profile ID, and status tracking. Jobs expire after 5 minutes. The `completeSale` flow in `use-pos-store.ts` automatically resolves the default OR printer, builds receipt commands, attempts to print, and queues the job on failure.
+
 ## System Architecture
 
 The Printer Management System follows a modular React-based architecture with clear separation of concerns:
@@ -53,41 +66,57 @@ Preview[Receipt Preview]
 end
 subgraph "Business Logic Layer"
 Store[POS Store]
-PrinterManager[Printer Manager]
-ReprintQueue[Reprint Queue]
+PrinterConfig[Printer Config]
+PrintQueue[Print Queue]
+PrinterService[Printer Service]
 AuditTrail[Audit Trail]
+end
+subgraph "ESC/POS Layer"
+EscPosBuilder[ESC/POS Builder]
+ReceiptContent[Receipt Content]
 end
 subgraph "Data Layer"
 DB[(IndexedDB)]
 Types[Type Definitions]
 Config[Configuration]
 end
+subgraph "Connection Backends"
+WebSerial[Web Serial Backend]
+WebBluetooth[Web Bluetooth Backend]
+LanBridge[LAN Bridge Backend]
+BridgeServer[Bridge Server - Node.js]
+end
 subgraph "Hardware Layer"
 USB[USB Printer]
 BT[Bluetooth Printer]
 LAN[LAN Printer]
-ESCPOS[ESC/POS Commands]
 end
 POS --> Store
-Settings --> PrinterManager
-Status --> PrinterManager
-Preview --> PrinterManager
+Settings --> PrinterConfig
+Status --> PrinterConfig
+Preview --> ReceiptContent
 Store --> DB
-PrinterManager --> DB
-ReprintQueue --> DB
-AuditTrail --> DB
-PrinterManager --> USB
-PrinterManager --> BT
-PrinterManager --> LAN
-PrinterManager --> ESCPOS
+PrinterConfig --> DB
+PrintQueue --> DB
+PrinterService --> WebSerial
+PrinterService --> WebBluetooth
+PrinterService --> LanBridge
+LanBridge --> BridgeServer
+BridgeServer --> LAN
+WebSerial --> USB
+WebBluetooth --> BT
+ReceiptContent --> EscPosBuilder
 DB --> Types
 Types --> Config
 ```
 
 **Diagram sources**
 - [pos-prototype.tsx:94-595](file://web-prototype/src/components/pos-prototype.tsx#L94-L595)
-- [printer-settings.tsx:6-418](file://web-prototype/src/components/printer-settings.tsx#L6-L418)
-- [use-pos-store.ts:70-671](file://web-prototype/src/lib/use-pos-store.ts#L70-L671)
+- [printer-settings.tsx:6-481](file://web-prototype/src/components/printer-settings.tsx#L6-L481)
+- [use-pos-store.ts:73-764](file://web-prototype/src/lib/use-pos-store.ts#L73-L764)
+- [printer-config.ts:1-107](file://web-prototype/src/lib/printer/printer-config.ts#L1-L107)
+- [print-queue.ts:1-92](file://web-prototype/src/lib/printer/print-queue.ts#L1-L92)
+- [printer-service.ts:1-79](file://web-prototype/src/lib/printer/printer-service.ts#L1-L79)
 
 The architecture ensures scalability, maintainability, and regulatory compliance through:
 
@@ -116,7 +145,13 @@ class PrinterProfile {
 +boolean partialCut
 +PrinterRole role
 +boolean isDefault
++boolean defaultForOr
++boolean defaultForReport
 +PrinterStatusType status
++number baudRate
++string bridgeUrl
++string deviceId
++ReceiptLayoutConfig receiptLayout
 }
 class ReceiptLayoutConfig {
 +string logoUrl
@@ -151,9 +186,9 @@ PrinterProfile --> PrinterStatusType : "monitored"
 ```
 
 **Diagram sources**
-- [types.ts:338-350](file://web-prototype/src/lib/types.ts#L338-L350)
-- [types.ts:352-358](file://web-prototype/src/lib/types.ts#L352-L358)
-- [types.ts:334-337](file://web-prototype/src/lib/types.ts#L334-L337)
+- [types.ts:339-358](file://web-prototype/src/lib/types.ts#L339-L358)
+- [types.ts:367-373](file://web-prototype/src/lib/types.ts#L367-L373)
+- [types.ts:335-337](file://web-prototype/src/lib/types.ts#L335-L337)
 
 ### Print Job Lifecycle
 
@@ -453,38 +488,50 @@ The system includes built-in compliance features for BIR regulations:
 
 ### Data Persistence Layer
 
-The system uses IndexedDB for local data persistence:
+The system uses IndexedDB for local data persistence with schema version 5:
 
 ```mermaid
 graph LR
 subgraph "Application Layer"
 Store[POS Store]
 Components[React Components]
+PrinterConfig[Printer Config Module]
+PrintQueue[Print Queue Module]
 end
 subgraph "Persistence Layer"
 IndexedDB[(IndexedDB)]
-Schema[Schema Version 3]
+Schema[Schema Version 5]
 end
 subgraph "Data Stores"
 Products[Products Store]
 Transactions[Transactions Store]
-PrintJobs[Print Jobs Store]
+PrinterProfiles[Printer Profiles Store]
+ReprintQueue[Reprint Queue Store]
+AuditLog[Audit Log Store]
+PrinterActivity[Printer Activity Store]
 Settings[Settings Store]
 SyncQueue[Sync Queue Store]
+BirSettings[BIR Settings Store]
 end
 Store --> IndexedDB
 Components --> IndexedDB
+PrinterConfig --> IndexedDB
+PrintQueue --> IndexedDB
 IndexedDB --> Schema
 Schema --> Products
 Schema --> Transactions
-Schema --> PrintJobs
+Schema --> PrinterProfiles
+Schema --> ReprintQueue
+Schema --> AuditLog
+Schema --> PrinterActivity
 Schema --> Settings
 Schema --> SyncQueue
+Schema --> BirSettings
 ```
 
 **Diagram sources**
-- [db.ts:99-115](file://web-prototype/src/lib/db.ts#L99-L115)
-- [db.ts:36-46](file://web-prototype/src/lib/db.ts#L36-L46)
+- [db.ts:31-73](file://web-prototype/src/lib/db.ts#L31-L73)
+- [db.ts:96-143](file://web-prototype/src/lib/db.ts#L96-L143)
 
 ### Type Safety Architecture
 
@@ -613,14 +660,16 @@ The system provides diagnostic capabilities through the status indicator compone
 
 The Printer Management System represents a comprehensive solution for thermal printer management in pharmaceutical POS environments. Its architecture emphasizes regulatory compliance, operational reliability, and user experience while maintaining flexibility for various deployment scenarios.
 
+**Updated** The system now includes a complete ESC/POS command generation layer with real thermal printer output via Web Serial, Web Bluetooth, and LAN bridge backends. Printer profiles support role-based defaults (`defaultForOr`, `defaultForReport`), and the durable print queue persists jobs to IndexedDB for retry after failures. The LAN Printer Bridge server enables network printer access from the browser.
+
 Key strengths of the system include:
 
 - **Regulatory Compliance**: Built-in BIR compliance features ensure legal adherence
-- **Multi-Hardware Support**: ESC/POS compatibility across major printer vendors
+- **Multi-Hardware Support**: ESC/POS compatibility across major printer vendors via Web Serial, Web Bluetooth, and LAN bridge
+- **Durable Print Queue**: Jobs are persisted to IndexedDB with automatic expiry and retry
+- **Role-Based Defaults**: Separate default printers for OR receipts and reports
 - **Robust Error Handling**: Comprehensive print failure management with user-friendly fallbacks
 - **Audit Trail**: Complete documentation of all printer activities for compliance purposes
 - **Scalable Architecture**: Modular design supporting multiple printers and connection types
 
 The system's integration with the broader PharmaSpot ecosystem demonstrates its capability to serve as a foundation for enterprise-grade POS solutions while maintaining the flexibility needed for diverse deployment scenarios.
-
-Future enhancements could include expanded hardware support, advanced reporting capabilities, and integration with cloud-based print management services for centralized monitoring and control.

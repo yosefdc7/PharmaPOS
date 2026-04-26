@@ -18,11 +18,17 @@ import {
   getFeatureFlags,
   getOne,
   login as loginLocal,
+  logout as logoutLocal,
   markPendingSyncAsSynced,
   putMany,
   putOne,
+  readSession,
+  requestPersistentStorage,
   resetPrototypeData,
-  seedIfNeeded
+  saveLocalUserAccount,
+  seedIfNeeded,
+  shouldAutoLogin,
+  writeSession
 } from "./db";
 import {
   buildSnapshot,
@@ -35,6 +41,7 @@ import {
   type TelemetryEvent
 } from "./observability";
 import type {
+  AppViewKey,
   BirSettings,
   CartItem,
   Category,
@@ -56,6 +63,7 @@ import type {
   ScPwdSummaryCard,
   ScPwdTransactionLogRow,
   Settings,
+  StoragePersistenceStatus,
   SyncQueueItem,
   Transaction,
   User
@@ -69,6 +77,54 @@ export type SaleInput = {
   paymentStatus: PaymentStatus;
   reference: string;
 };
+
+export const ALL_APP_VIEWS: AppViewKey[] = [
+  "pos",
+  "products",
+  "customers",
+  "rx",
+  "control-tower",
+  "settings",
+  "reports",
+  "sync"
+];
+
+export function canUserAccessView(user: User | null, view: AppViewKey): boolean {
+  if (!user) return false;
+
+  switch (view) {
+    case "pos":
+      return user.permissions.transactions;
+    case "products":
+      return user.permissions.products;
+    case "customers":
+      return user.permissions.customers;
+    case "rx":
+      return user.permissions.rx;
+    case "control-tower":
+      return user.permissions.controlTower;
+    case "settings":
+      return user.permissions.settings;
+    case "reports":
+      return user.permissions.reports;
+    case "sync":
+      return user.permissions.sync;
+    default:
+      return false;
+  }
+}
+
+export function getAvailableViews(user: User | null): AppViewKey[] {
+  return ALL_APP_VIEWS.filter((view) => canUserAccessView(user, view));
+}
+
+export function resolveAccessibleView(requestedView: AppViewKey, user: User | null): AppViewKey {
+  const availableViews = getAvailableViews(user);
+  if (availableViews.includes(requestedView)) {
+    return requestedView;
+  }
+  return availableViews[0] ?? "pos";
+}
 
 export function usePosStore() {
   const [loadState, setLoadState] = useState<LoadState>("booting");
@@ -96,6 +152,7 @@ export function usePosStore() {
   const [printFailure, setPrintFailure] = useState<{ transaction: Transaction; printer: PrinterProfile | null; queueJobId?: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+  const [storagePersistence, setStoragePersistence] = useState<StoragePersistenceStatus>("unknown");
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
   const [offlineStartedAt, setOfflineStartedAt] = useState<string | null>(null);
   const [offlineSecondsTotal, setOfflineSecondsTotal] = useState(0);
@@ -162,9 +219,29 @@ export function usePosStore() {
         setBrowserOnline(typeof navigator === "undefined" ? true : navigator.onLine);
         await seedIfNeeded();
         await refresh();
+        const persistence = await requestPersistentStorage();
         if (mounted) {
-          const result = await loginLocal("admin", "admin");
-          setCurrentUser(result.auth && result.user ? result.user : null);
+          setStoragePersistence(persistence);
+          recordEvent({ type: "storage_persistence", details: { status: persistence } });
+          logStructured("info", "storage.persistence", { status: persistence });
+        }
+        if (mounted) {
+          const existingSession = readSession();
+          let nextUser: User | null = null;
+
+          if (existingSession) {
+            const sessionUser = await getOne("users", existingSession.userId);
+            if (sessionUser && sessionUser.username === existingSession.username) {
+              nextUser = sessionUser;
+            }
+          }
+
+          if (!nextUser && shouldAutoLogin()) {
+            const result = await loginLocal("admin", "admin");
+            nextUser = result.auth && result.user ? result.user : null;
+          }
+
+          setCurrentUser(nextUser);
           setLoadState("ready");
         }
       } catch (bootError) {
@@ -464,6 +541,27 @@ export function usePosStore() {
     [refresh]
   );
 
+  const saveUserAccount = useCallback(
+    async (input: {
+      id?: string;
+      username: string;
+      fullname: string;
+      role: "admin" | "cashier";
+      permissions: User["permissions"];
+      password?: string;
+    }) => {
+      const savedUser = await saveLocalUserAccount(input);
+      await enqueueSync({
+        entity: "user",
+        operation: input.id ? "update" : "create",
+        payload: savedUser
+      });
+      await refresh();
+      return savedUser;
+    },
+    [refresh]
+  );
+
   const removeEntity = useCallback(
     async (storeName: "products" | "categories" | "customers" | "users", id: string, syncEntity: SyncQueueItem["entity"]) => {
       await deleteOne(storeName, id);
@@ -599,12 +697,19 @@ export function usePosStore() {
       const result = await loginLocal(username, password);
       if (result.auth && result.user) {
         setCurrentUser(result.user);
+        recordEvent({ type: "login", details: { username: result.user.username } });
         return true;
       }
       return false;
     },
-    []
+    [recordEvent]
   );
+
+  const logout = useCallback(() => {
+    logoutLocal();
+    setCurrentUser(null);
+    recordEvent({ type: "logout", details: {} });
+  }, [recordEvent]);
 
   const clearPrintFailure = useCallback(() => {
     setPrintFailure(null);
@@ -613,7 +718,10 @@ export function usePosStore() {
   const switchUser = useCallback(
     (username: string) => {
       const user = users.find((candidate) => candidate.username === username);
-      if (user) setCurrentUser(user);
+      if (user) {
+        setCurrentUser(user);
+        writeSession(user);
+      }
       return Boolean(user);
     },
     [users]
@@ -692,6 +800,16 @@ export function usePosStore() {
     [observabilitySnapshot]
   );
 
+  const canAccessView = useCallback(
+    (view: AppViewKey) => canUserAccessView(currentUser, view),
+    [currentUser]
+  );
+
+  const availableViews = useMemo(
+    () => getAvailableViews(currentUser),
+    [currentUser]
+  );
+
   return {
     loadState,
     error,
@@ -708,6 +826,7 @@ export function usePosStore() {
     remarks,
     customerId,
     currentUser,
+    storagePersistence,
     forcedOffline,
     online,
     totals,
@@ -729,11 +848,13 @@ export function usePosStore() {
     holdOrder,
     resumeHeldOrder,
     saveEntity,
+    saveUserAccount,
     removeEntity,
     syncNow,
     refundTransaction,
     resetData,
     login,
+    logout,
     switchUser,
     rxPharmacists,
     setRxPharmacists,
@@ -747,6 +868,8 @@ export function usePosStore() {
     clearRxRedFlag,
     getRxInspectionSnapshot,
     updateRxSettings,
+    canAccessView,
+    availableViews,
     observabilitySnapshot,
     sloTargets: defaultSloTargets,
     activeAlerts,

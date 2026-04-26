@@ -206,14 +206,36 @@ export const seedUsers: User[] = [
     username: "admin",
     fullname: "Administrator",
     role: "admin",
-    permissions: { products: true, categories: true, transactions: true, users: true, settings: true }
+    permissions: {
+      products: true,
+      categories: true,
+      customers: true,
+      transactions: true,
+      rx: true,
+      controlTower: true,
+      users: true,
+      settings: true,
+      reports: true,
+      sync: true
+    }
   },
   {
     id: "usr-cashier",
     username: "cashier",
     fullname: "Store Cashier",
     role: "cashier",
-    permissions: { products: false, categories: false, transactions: true, users: false, settings: false }
+    permissions: {
+      products: false,
+      categories: false,
+      customers: true,
+      transactions: true,
+      rx: false,
+      controlTower: false,
+      users: false,
+      settings: false,
+      reports: false,
+      sync: false
+    }
   }
 ];
 

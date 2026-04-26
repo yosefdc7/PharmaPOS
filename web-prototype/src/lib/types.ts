@@ -1,9 +1,24 @@
 export type PermissionKey =
   | "products"
   | "categories"
+  | "customers"
   | "transactions"
+  | "rx"
+  | "controlTower"
   | "users"
-  | "settings";
+  | "settings"
+  | "reports"
+  | "sync";
+
+export type AppViewKey =
+  | "pos"
+  | "products"
+  | "customers"
+  | "rx"
+  | "control-tower"
+  | "settings"
+  | "reports"
+  | "sync";
 
 export type PaymentMethod = "cash" | "external-terminal";
 export type PaymentStatus = "paid" | "pending" | "refunded";
@@ -191,6 +206,15 @@ export type User = {
   role: "admin" | "cashier";
   permissions: Record<PermissionKey, boolean>;
 };
+
+export type AuthSession = {
+  userId: string;
+  username: string;
+  startedAt: string;
+  expiresAt: string;
+};
+
+export type StoragePersistenceStatus = "unknown" | "granted" | "denied" | "unsupported";
 
 export type ScPwdSettings = {
   enabled: boolean;

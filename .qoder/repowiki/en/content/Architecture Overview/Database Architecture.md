@@ -391,3 +391,8 @@ AsyncDep --> Transactions
 
 ## Conclusion
 The POS application employs a clean, modular architecture with NeDB as the embedded persistence layer. Each domain collection is isolated in its own datastore file under a central data directory, enabling straightforward maintenance, backups, and migrations. Robust input sanitization, unique indexes, and integrity checks contribute to data reliability. The backup/restore mechanism ensures safe archival and restoration of the entire dataset, supporting operational continuity.
+
+**Updated** The web prototype (`web-prototype/`) uses IndexedDB for browser-based persistence. The database is at schema version 5 with 18 object stores: `meta`, `products`, `categories`, `customers`, `users`, `settings`, `transactions`, `heldOrders`, `syncQueue`, `birSettings`, `printerProfiles`, `auditLog`, `printerActivity`, `prescriptions`, `rxSettings`, `xReadings`, `zReadings`, and `reprintQueue`. Migrations are applied sequentially on `onupgradeneeded` (v2: feature flags, v3: expiryAlertDays backfill, v4: Phase 1 new stores, v5: reprintQueue). All stores use `{ keyPath: "id" }`. The `db.ts` module exposes `openPosDb()`, `getAll()`, `getOne()`, `putOne()`, `putMany()`, `deleteOne()`, `enqueueSync()`, `seedIfNeeded()`, and `resetPrototypeData()` helper functions.
+
+**Section sources**
+- [web-prototype/src/lib/db.ts:1-295](file://web-prototype/src/lib/db.ts#L1-L295)

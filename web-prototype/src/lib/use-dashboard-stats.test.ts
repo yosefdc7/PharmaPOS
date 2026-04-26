@@ -25,9 +25,14 @@ const users: User[] = [
     permissions: {
       products: true,
       categories: true,
+      customers: true,
       transactions: true,
+      rx: true,
+      controlTower: true,
       users: true,
-      settings: true
+      settings: true,
+      reports: true,
+      sync: true
     }
   }
 ];

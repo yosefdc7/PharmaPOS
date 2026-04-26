@@ -33,6 +33,8 @@ The Audit Trail System is a comprehensive compliance-focused logging mechanism d
 
 The audit trail encompasses multiple domains including user authentication, financial transactions, report generation, system configurations, and printer activity monitoring. It serves as a critical component for meeting BIR accreditation requirements and maintaining transparent business operations.
 
+**Updated** The audit trail panel now loads real entries from the `auditLog` and `printerActivity` IndexedDB stores instead of mock data. The `logRxRefusal()` and `addRxRedFlag()` functions in `use-pos-store.ts` write audit entries to IndexedDB. Generated X-Reading and Z-Reading reports are persisted to their respective IndexedDB stores (`xReadings`, `zReadings`) with corresponding audit trail entries.
+
 ## System Architecture
 
 The Audit Trail System is built on a React-based frontend architecture with comprehensive backend integration capabilities. The system leverages a hybrid approach combining local client-side logging with potential server-side persistence for enterprise deployments.

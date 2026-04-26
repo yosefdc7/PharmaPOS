@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { DEFAULT_FEATURE_FLAGS, mergeFeatureFlags, type FeatureFlags } from "./feature-flags";
 import {
   seedCategories,
@@ -9,7 +10,9 @@ import {
   seedUsers
 } from "./seed";
 import type {
+  AuthSession,
   AuditEntry,
+  PermissionKey,
   BirSettings,
   Category,
   Customer,
@@ -22,6 +25,7 @@ import type {
   SyncQueueItem,
   Transaction,
   User,
+  StoragePersistenceStatus,
   XReading,
   ZReading,
   PrescriptionDraft,
@@ -30,6 +34,21 @@ import type {
 
 const DB_NAME = "pharmaspot-web-prototype";
 const DB_VERSION = 5;
+const SESSION_KEY = "pharmapos.auth.session";
+const AUTO_LOGIN_SUPPRESS_KEY = "pharmapos.auth.suppressAutoLogin";
+const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const BCRYPT_SALT_ROUNDS = 10;
+const DEMO_AUTO_LOGIN_ENABLED = process.env.NEXT_PUBLIC_DEMO_AUTO_LOGIN === "true";
+
+type StoredUser = User & { passwordHash: string };
+export type LocalUserUpsert = {
+  id?: string;
+  username: string;
+  fullname: string;
+  role: "admin" | "cashier";
+  permissions: Record<PermissionKey, boolean>;
+  password?: string;
+};
 
 export type StoreName =
   | "meta"
@@ -94,6 +113,57 @@ type StoreEntityMap = {
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+
+function sanitizeUser(storedUser: StoredUser): User {
+  const { passwordHash: _passwordHash, ...user } = storedUser;
+  return user;
+}
+
+function isStoredUser(value: unknown): value is StoredUser {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as StoredUser).id === "string" &&
+    typeof (value as StoredUser).username === "string" &&
+    typeof (value as StoredUser).passwordHash === "string"
+  );
+}
+
+function sessionStorageAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.sessionStorage !== "undefined" &&
+    typeof window.sessionStorage.getItem === "function" &&
+    typeof window.sessionStorage.setItem === "function" &&
+    typeof window.sessionStorage.removeItem === "function"
+  );
+}
+
+function localStorageAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.localStorage !== "undefined" &&
+    typeof window.localStorage.getItem === "function" &&
+    typeof window.localStorage.setItem === "function" &&
+    typeof window.localStorage.removeItem === "function"
+  );
+}
+
+function suppressAutoLogin(): void {
+  if (!sessionStorageAvailable()) return;
+  window.sessionStorage.setItem(AUTO_LOGIN_SUPPRESS_KEY, "1");
+}
+
+function clearAutoLoginSuppression(): void {
+  if (!sessionStorageAvailable()) return;
+  window.sessionStorage.removeItem(AUTO_LOGIN_SUPPRESS_KEY);
+}
+
+export function shouldAutoLogin(): boolean {
+  if (!DEMO_AUTO_LOGIN_ENABLED) return false;
+  if (!sessionStorageAvailable()) return true;
+  return window.sessionStorage.getItem(AUTO_LOGIN_SUPPRESS_KEY) !== "1";
+}
 
 function ensureStores(db: IDBDatabase): void {
   for (const storeName of STORES) {
@@ -179,7 +249,11 @@ export async function getAll<TStore extends StoreName>(
   storeName: TStore
 ): Promise<StoreEntityMap[TStore][]> {
   const db = await openPosDb();
-  return promisifyRequest(db.transaction(storeName, "readonly").objectStore(storeName).getAll());
+  const result = await promisifyRequest(db.transaction(storeName, "readonly").objectStore(storeName).getAll());
+  if (storeName === "users") {
+    return (result as unknown[]).filter(isStoredUser).map(sanitizeUser) as StoreEntityMap[TStore][];
+  }
+  return result;
 }
 
 export async function getOne<TStore extends StoreName>(
@@ -188,7 +262,28 @@ export async function getOne<TStore extends StoreName>(
 ): Promise<StoreEntityMap[TStore] | undefined> {
   const db = await openPosDb();
   const result = await promisifyRequest(db.transaction(storeName, "readonly").objectStore(storeName).get(id));
+  if (storeName === "users" && isStoredUser(result)) {
+    return sanitizeUser(result) as StoreEntityMap[TStore];
+  }
   return result as StoreEntityMap[TStore] | undefined;
+}
+
+async function getStoredUsers(): Promise<StoredUser[]> {
+  const db = await openPosDb();
+  const result = await promisifyRequest(db.transaction("users", "readonly").objectStore("users").getAll());
+  return (result as unknown[]).filter(isStoredUser);
+}
+
+async function getStoredUser(id: string): Promise<StoredUser | undefined> {
+  const db = await openPosDb();
+  const result = await promisifyRequest(db.transaction("users", "readonly").objectStore("users").get(id));
+  return isStoredUser(result) ? result : undefined;
+}
+
+function defaultPasswordForUser(user: User): string {
+  if (user.username === "admin") return "admin";
+  if (user.username === "cashier") return "cashier";
+  return user.username;
 }
 
 export async function putOne<TStore extends StoreName>(
@@ -210,6 +305,42 @@ export async function putMany<TStore extends StoreName>(
   const store = tx.objectStore(storeName);
   values.forEach((value) => store.put(value));
   await completeTransaction(tx);
+}
+
+export async function saveLocalUserAccount(input: LocalUserUpsert): Promise<User> {
+  const normalizedUsername = input.username.trim();
+  const normalizedFullname = input.fullname.trim();
+  if (!normalizedUsername || !normalizedFullname) {
+    throw new Error("Username and full name are required.");
+  }
+
+  const existing = input.id ? await getStoredUser(input.id) : undefined;
+  if (!existing && !input.password) {
+    throw new Error("Password is required when creating a user.");
+  }
+
+  const passwordHash = input.password
+    ? await bcrypt.hash(input.password, BCRYPT_SALT_ROUNDS)
+    : existing?.passwordHash;
+
+  if (!passwordHash) {
+    throw new Error("Unable to resolve a password hash for this user.");
+  }
+
+  const storedUser: StoredUser = {
+    id: input.id ?? crypto.randomUUID(),
+    username: normalizedUsername,
+    fullname: normalizedFullname,
+    role: input.role,
+    permissions: input.permissions,
+    passwordHash
+  };
+
+  const db = await openPosDb();
+  const tx = db.transaction("users", "readwrite");
+  tx.objectStore("users").put(storedUser);
+  await completeTransaction(tx);
+  return sanitizeUser(storedUser);
 }
 
 export async function deleteOne(storeName: StoreName, id: string): Promise<void> {
@@ -261,20 +392,103 @@ export async function markPendingSyncAsSynced(): Promise<void> {
   );
 }
 
+export function readSession(): AuthSession | null {
+  if (!localStorageAvailable()) return null;
+
+  const raw = window.localStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+
+  try {
+    const session = JSON.parse(raw) as AuthSession;
+    if (
+      typeof session.userId !== "string" ||
+      typeof session.username !== "string" ||
+      typeof session.startedAt !== "string" ||
+      typeof session.expiresAt !== "string"
+    ) {
+      window.localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+
+    if (new Date(session.expiresAt).getTime() <= Date.now()) {
+      window.localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+
+    return session;
+  } catch {
+    window.localStorage.removeItem(SESSION_KEY);
+    return null;
+  }
+}
+
+export function writeSession(user: User, ttlMs = DEFAULT_SESSION_TTL_MS): AuthSession {
+  const startedAt = new Date().toISOString();
+  const session: AuthSession = {
+    userId: user.id,
+    username: user.username,
+    startedAt,
+    expiresAt: new Date(Date.now() + ttlMs).toISOString()
+  };
+
+  if (localStorageAvailable()) {
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  }
+  clearAutoLoginSuppression();
+  return session;
+}
+
+export function logout(): void {
+  if (localStorageAvailable()) {
+    window.localStorage.removeItem(SESSION_KEY);
+  }
+  suppressAutoLogin();
+}
+
 export async function login(username: string, password: string): Promise<{ auth: boolean; user?: User }> {
-  const users = await getAll("users");
-  const user = users.find((candidate) => candidate.username === username);
-  if (!user) {
+  const normalizedUsername = username.trim();
+  if (!normalizedUsername || !password) {
     return { auth: false };
   }
 
-  // Prototype auth stays local and intentionally simple for seeded demo users.
-  const passwordMatches = password === username || (username === "admin" && password === "admin");
+  const users = await getStoredUsers();
+  const storedUser = users.find((candidate) => candidate.username === normalizedUsername);
+  if (!storedUser) {
+    return { auth: false };
+  }
+
+  const passwordMatches = await bcrypt.compare(password, storedUser.passwordHash);
   if (!passwordMatches) {
     return { auth: false };
   }
 
+  const user = sanitizeUser(storedUser);
+  writeSession(user);
   return { auth: true, user };
+}
+
+export async function requestPersistentStorage(): Promise<StoragePersistenceStatus> {
+  if (
+    typeof navigator === "undefined" ||
+    !("storage" in navigator) ||
+    typeof navigator.storage?.persist !== "function"
+  ) {
+    return "unsupported";
+  }
+
+  const alreadyPersisted = typeof navigator.storage.persisted === "function"
+    ? await navigator.storage.persisted()
+    : false;
+  if (alreadyPersisted) {
+    return "granted";
+  }
+
+  try {
+    const granted = await navigator.storage.persist();
+    return granted ? "granted" : "denied";
+  } catch {
+    return "denied";
+  }
 }
 
 export async function seedIfNeeded(): Promise<void> {
@@ -285,13 +499,36 @@ export async function seedIfNeeded(): Promise<void> {
     if (existing && existing.store !== seedSettings.store) {
       await putOne("settings", seedSettings);
     }
+    const db = await openPosDb();
+    const rawUsers = await promisifyRequest(db.transaction("users", "readonly").objectStore("users").getAll());
+    const nextUsers = await Promise.all(
+      (rawUsers as Array<User | StoredUser>).map(async (user) => {
+        if (isStoredUser(user)) {
+          return user;
+        }
+        return {
+          ...user,
+          passwordHash: await bcrypt.hash(defaultPasswordForUser(user), BCRYPT_SALT_ROUNDS)
+        };
+      })
+    );
+    const hasMissingHashes = nextUsers.some((user, index) => !isStoredUser((rawUsers as Array<User | StoredUser>)[index]));
+    if (hasMissingHashes) {
+      await putMany("users", nextUsers as unknown as User[]);
+    }
     return;
   }
 
   await putMany("categories", seedCategories);
   await putMany("products", seedProducts);
   await putMany("customers", seedCustomers);
-  await putMany("users", seedUsers);
+  const seededUsers = await Promise.all(
+    seedUsers.map(async (user) => ({
+      ...user,
+      passwordHash: await bcrypt.hash(defaultPasswordForUser(user), BCRYPT_SALT_ROUNDS)
+    }))
+  );
+  await putMany("users", seededUsers as unknown as User[]);
   await putMany("transactions", seedTransactions);
   await putMany("syncQueue", seedSyncQueue);
   await putOne("settings", seedSettings);
@@ -307,4 +544,26 @@ export async function resetPrototypeData(): Promise<void> {
   }
   await completeTransaction(tx);
   await seedIfNeeded();
+}
+
+export async function resetPosDbForTests(): Promise<void> {
+  if (dbPromise) {
+    const db = await dbPromise;
+    db.close();
+    dbPromise = null;
+  }
+  if (typeof indexedDB !== "undefined") {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase(DB_NAME);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => resolve();
+    });
+  }
+  if (localStorageAvailable()) {
+    window.localStorage.removeItem(SESSION_KEY);
+  }
+  if (sessionStorageAvailable()) {
+    window.sessionStorage.removeItem(AUTO_LOGIN_SUPPRESS_KEY);
+  }
 }

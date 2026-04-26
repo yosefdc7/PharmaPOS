@@ -118,7 +118,25 @@ Browser-compatible ESC/POS command generation for real thermal printers, located
 
 ## 2026-04-26 - codex savepoint
 
+- Web prototype local auth now defaults to IndexedDB-backed bcrypt password hashes plus browser-stored sessions with expiry for the offline runtime path.
+- Boot now requests `navigator.storage.persist()` when supported and surfaces whether persistent storage was granted.
+- Error containment now includes Next.js `error.tsx`, `global-error.tsx`, and a local workspace error boundary around the POS shell.
+
+## 2026-04-26 - codex savepoint
+
 - Re-centered the Next.js prototype on IndexedDB as the default runtime path, while leaving the newer Next.js API/libSQL files in place as experimental reference work.
+
+## 2026-04-26 - qoder savepoint
+
+### Phase 1 Backend Wiring
+
+- IndexedDB schema upgraded to v5 with 18 stores (added: birSettings, printerProfiles, auditLog, printerActivity, prescriptions, rxSettings, xReadings, zReadings, reprintQueue)
+- BIR settings, Printer profiles, Audit trail, X/Z-Reading, and Prescriptions now persist to IndexedDB
+- `completeSale` reads BIR settings for OR series, auto-increments OR number, blocks when series exhausted, and attempts thermal print on completion
+- Printer config module: `defaultForOr` / `defaultForReport` role-based defaults, `resolvePrinterForRole()`, `applyPrinterRoleDefault()`
+- Durable print queue persisted to IndexedDB `reprintQueue` store with Base64-encoded ESC/POS commands
+- LAN Printer Bridge (`bridge/bridge-server.js`): Node.js HTTP server forwarding ESC/POS over raw TCP
+- New tests: printer-config, print-queue, receipt-content, receipt-preview, reprint-queue, 12 OR series / X-Reading unit tests
 
 
 ### Web Prototype — Thermal Printer ESC/POS Module

@@ -1,5 +1,10 @@
 import { PosPrototype } from "@/components/pos-prototype";
+import { PosWorkspaceErrorBoundary } from "@/components/pos-workspace-error-boundary";
 
 export default function Home() {
-  return <PosPrototype />;
+  return (
+    <PosWorkspaceErrorBoundary>
+      <PosPrototype />
+    </PosWorkspaceErrorBoundary>
+  );
 }

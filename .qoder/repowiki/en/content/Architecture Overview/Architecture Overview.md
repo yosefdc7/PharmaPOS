@@ -34,6 +34,8 @@
 - Enhanced architecture overview to include multi-agent coordination patterns
 - Added web prototype architecture with offline-first design
 - Integrated shared memory protocol into system boundaries and data flow patterns
+- Updated web prototype section: IndexedDB schema v5 with 18 stores, printer subsystem, LAN bridge server, 24 experimental API routes
+- Added printer subsystem architecture to web prototype layer
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -504,10 +506,13 @@ Commit --> End(["Complete Cycle"])
 The web prototype represents PharmaSpot's future direction with a modern, offline-first architecture built on Next.js. This component complements the traditional Electron desktop application while demonstrating advanced web technologies and deployment patterns.
 
 ### Core Components
-- **Database Layer (db.ts)**: IndexedDB wrapper with automatic migrations, seed data, and transaction queuing
-- **State Management (use-pos-store.ts)**: React hooks-based store with observability, feature flags, and sync orchestration
+- **Database Layer (db.ts)**: IndexedDB wrapper with automatic migrations through schema v5, seed data, transaction queuing, and 18 object stores including birSettings, printerProfiles, auditLog, printerActivity, prescriptions, rxSettings, xReadings, zReadings, and reprintQueue
+- **State Management (use-pos-store.ts)**: React hooks-based store with observability, feature flags, sync orchestration, and integrated thermal print on sale completion
+- **Printer Subsystem (src/lib/printer/)**: ESC/POS command builder, receipt content generation, durable print queue, and three connection backends (Web Serial, Web Bluetooth, LAN bridge)
+- **LAN Printer Bridge (bridge/bridge-server.js)**: Node.js HTTP server that forwards Base64-encoded ESC/POS commands over raw TCP to thermal printers
 - **Offline-First Design**: All data operations work without network connectivity, with automatic sync when online
 - **Type Safety**: Full TypeScript implementation with comprehensive type definitions
+- **Experimental API Routes (src/app/api/)**: 24 Next.js API routes with SQLite/@libsql backend for future cloud migration (not default runtime path)
 
 ### Offline-First Implementation
 The web prototype implements a sophisticated offline-first architecture:
@@ -630,8 +635,8 @@ SHARED --> WEBSTORE
 - **NeDB** is lightweight and suitable for desktop-scale data; consider indexing strategies and periodic compaction for large datasets.
 - **Image uploads** are constrained by file size and type filters; ensure upload paths are writable under the application data directory.
 - **Renderer-side caching** of lists (users, products, categories) reduces repeated network calls.
-- **Web prototype optimizations**: IndexedDB performance tuning, efficient React component rendering, and lazy loading strategies.
-- **Offline-first benefits**: Eliminates network dependency for core POS operations, improving reliability in various environments.
+- **Web prototype optimizations**: IndexedDB performance tuning, efficient React component rendering, lazy loading strategies, and printer subsystem lazy-import in `completeSale`
+- **Offline-first benefits**: Eliminates network dependency for core POS operations, improving reliability in various environments
 
 ## Troubleshooting Guide
 - **Server fails to start or bind to port**:

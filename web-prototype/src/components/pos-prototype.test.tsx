@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PosPrototype } from "./pos-prototype";
+import { ALL_APP_VIEWS, canUserAccessView } from "@/lib/use-pos-store";
 import { seedCategories, seedProducts, seedSettings, seedUsers } from "@/lib/seed";
 import type { Product } from "@/lib/types";
 
@@ -11,9 +12,13 @@ const removeEntity = vi.fn(async () => undefined);
 
 const mockedUsePosStore = vi.fn();
 
-vi.mock("@/lib/use-pos-store", () => ({
-  usePosStore: () => mockedUsePosStore()
-}));
+vi.mock("@/lib/use-pos-store", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/use-pos-store")>("@/lib/use-pos-store");
+  return {
+    ...actual,
+    usePosStore: () => mockedUsePosStore()
+  };
+});
 
 function buildProducts(count = 15): Product[] {
   return Array.from({ length: count }, (_, index) => {
@@ -48,6 +53,7 @@ function renderProductsView() {
     discount: 0,
     customerId: "walk-in",
     currentUser: seedUsers[0],
+    storagePersistence: "granted",
     forcedOffline: false,
     online: true,
     totals: { itemCount: 0, subtotal: 0, discount: 0, taxableAmount: 0, tax: 0, total: 0 },
@@ -66,11 +72,15 @@ function renderProductsView() {
     holdOrder: vi.fn(),
     resumeHeldOrder: vi.fn(),
     saveEntity,
+    saveUserAccount: vi.fn(),
     removeEntity,
     syncNow: vi.fn(),
     refundTransaction: vi.fn(),
     resetData: vi.fn(),
     login: vi.fn(),
+    logout: vi.fn(),
+    canAccessView: (view: Parameters<typeof canUserAccessView>[1]) => canUserAccessView(seedUsers[0], view),
+    availableViews: ALL_APP_VIEWS,
     observabilitySnapshot: {
       syncLagSeconds: 0,
       queueDepth: 0,

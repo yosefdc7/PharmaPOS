@@ -28,14 +28,23 @@
 - [web-prototype/src/lib/calculations.ts](file://web-prototype/src/lib/calculations.ts)
 - [web-prototype/src/lib/use-pos-store.ts](file://web-prototype/src/lib/use-pos-store.ts)
 - [web-prototype/src/components/pos-prototype.tsx](file://web-prototype/src/components/pos-prototype.tsx)
+- [web-prototype/src/lib/printer/escpos-commands.test.ts](file://web-prototype/src/lib/printer/escpos-commands.test.ts)
+- [web-prototype/src/lib/printer/receipt-content.test.ts](file://web-prototype/src/lib/printer/receipt-content.test.ts)
+- [web-prototype/src/lib/printer/print-queue.test.ts](file://web-prototype/src/lib/printer/print-queue.test.ts)
+- [web-prototype/src/lib/printer/printer-config.test.ts](file://web-prototype/src/lib/printer/printer-config.test.ts)
+- [web-prototype/src/components/receipt-preview.test.tsx](file://web-prototype/src/components/receipt-preview.test.tsx)
+- [web-prototype/src/components/reprint-queue.test.tsx](file://web-prototype/src/components/reprint-queue.test.tsx)
+- [web-prototype/src/lib/server/auth.test.ts](file://web-prototype/src/lib/server/auth.test.ts)
+- [web-prototype/src/lib/server/db.test.ts](file://web-prototype/src/lib/server/db.test.ts)
 </cite>
 
 ## Update Summary
 **Changes Made**
-- Enhanced testing infrastructure with improved confirmation dialog mocking in POS prototype tests
-- Strengthened testing foundation with better test coverage for delete confirmation flows
-- Improved mock implementations for window.confirm in component testing
-- Enhanced test cleanup and restoration procedures
+- Added printer subsystem tests: `printer-config.test.ts` (role resolution, defaults), `print-queue.test.ts` (durable queue, expiry), `receipt-content.test.ts` (all receipt variants), `receipt-preview.test.tsx` (React preview component), `reprint-queue.test.tsx` (queue UI component)
+- 12 new unit tests for OR series logic and X-Reading computation in `db.test.ts`
+- ESC/POS command builder tests: 33 unit tests in `escpos-commands.test.ts`
+- Enhanced confirmation dialog mocking with `vi.spyOn` for `window.confirm` in POS prototype tests
+- Server-side tests: `auth.test.ts`, `db.test.ts`, `db.integration.test.ts`, `migrations.integration.test.ts` in `src/lib/server/`
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -250,11 +259,14 @@ Integration tests validate database operations and feature flag management using
 - **Seed Operations**: Initial data population and validation
 - **Sync Queue Management**: Pending/synced status transitions
 - **Feature Flag Migrations**: Backward compatibility and staged rollouts
+- **OR Series Logic**: BIR OR number auto-increment and series exhaustion detection
+- **X-Reading Computation**: Sales snapshot calculations from transaction data
 
 #### Migration Testing
-- **Schema Versioning**: Database schema upgrade validation
+- **Schema Versioning**: Database schema upgrade validation through v5
 - **Rollback Procedures**: Kill-switch functionality testing
 - **Data Integrity**: Ensuring data consistency during migrations
+- **New Store Creation**: Verification that all 18 IndexedDB stores are created on upgrade
 
 **Section sources**
 - [web-prototype/src/lib/db.test.ts:1-31](file://web-prototype/src/lib/db.test.ts#L1-L31)
@@ -434,7 +446,7 @@ Enhanced performance considerations for the multi-framework testing approach:
 ## Conclusion
 The enhanced testing strategy successfully integrates both legacy and modern testing approaches for PharmaSpot POS. The addition of Vitest for the web POS prototype, comprehensive test types (unit, integration, contract, migration), and specialized testing infrastructure significantly strengthens the project's quality assurance capabilities. The multi-framework approach provides both backward compatibility with existing legacy tests and forward-looking testing practices for the new web prototype.
 
-**Updated** The recent enhancements include improved confirmation dialog mocking in POS prototype tests, better test coverage for delete confirmation flows, and strengthened testing foundation with proper cleanup procedures. These improvements ensure more reliable and maintainable component testing for the web POS prototype.
+**Updated** The printer subsystem has introduced several new test files: `printer-config.test.ts` validates role resolution and default printer assignment, `print-queue.test.ts` tests durable queue persistence and expiry behavior, `receipt-content.test.ts` covers all receipt variants with 22 unit tests, and `escpos-commands.test.ts` provides 33 unit tests for the ESC/POS builder. Component tests for `receipt-preview.test.tsx` and `reprint-queue.test.tsx` validate the React UI components. Additionally, 12 new unit tests in `db.test.ts` cover OR series logic and X-Reading computation from real transaction data.
 
 ## Appendices
 
@@ -447,6 +459,7 @@ The enhanced testing strategy successfully integrates both legacy and modern tes
 | Component Tests | ❌ | ✅ Testing Library | UI Behavior |
 | Migration Tests | ❌ | ✅ Vitest | Schema Changes |
 | Feature Flag Tests | ❌ | ✅ Vitest | Progressive Rollout |
+| Printer Tests | ❌ | ✅ Vitest | ESC/POS, Config, Queue |
 
 ### CI/CD Integration
 - **GitHub Actions**: Build and release workflows support both test frameworks
@@ -469,6 +482,11 @@ The enhanced testing strategy successfully integrates both legacy and modern tes
 ### Enhanced Testing Infrastructure Benefits
 **Updated** The enhanced testing infrastructure provides several key benefits:
 
+- **Printer Subsystem Coverage**: Comprehensive tests for ESC/POS commands, receipt content, print queue, and printer config
+- **OR Series Validation**: 12 unit tests covering BIR OR number auto-increment and series exhaustion
+- **X-Reading Computation**: Tests verify correct sales snapshot calculation from transaction data
+- **Durable Queue Testing**: Print queue persistence, expiry, and status transitions are tested
+- **Receipt Variant Coverage**: All receipt types (normal, void, reprint, x-reading, z-reading, daily-summary) are tested
 - **Improved Reliability**: Sophisticated mocking of browser APIs like `window.confirm`
 - **Better Test Coverage**: Comprehensive validation of user confirmation flows
 - **Maintained Clean State**: Proper cleanup of global mocks after tests

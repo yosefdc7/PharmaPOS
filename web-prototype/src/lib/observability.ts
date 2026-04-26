@@ -10,6 +10,9 @@ export type TelemetryEvent = {
     | "payment_attempt"
     | "network_state"
     | "order_completed"
+    | "login"
+    | "logout"
+    | "storage_persistence"
     | "scpwd_applied"
     | "scpwd_removed";
   details: Record<string, unknown>;

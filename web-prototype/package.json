@@ -16,20 +16,24 @@
     "ci:gates": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:contract && npm run security:scan"
   },
   "dependencies": {
-    "@libsql/client": "latest",
-    "bcryptjs": "latest",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "@libsql/client": "0.17.3",
+    "bcryptjs": "3.0.3",
+    "next": "16.2.4",
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
   },
   "devDependencies": {
-    "@testing-library/react": "latest",
-    "@types/bcryptjs": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
+    "@serwist/turbopack": "^9.5.7",
+    "@testing-library/react": "16.3.2",
+    "@types/bcryptjs": "3.0.0",
+    "@types/node": "25.6.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "^0.28.0",
+    "fake-indexeddb": "6.2.4",
     "jsdom": "^29.0.2",
-    "typescript": "latest",
-    "vitest": "latest"
+    "serwist": "^9.5.7",
+    "typescript": "6.0.3",
+    "vitest": "4.1.5"
   }
 }
