@@ -58,6 +58,16 @@ Routers are registered from `server.js`:
 - Tests: Jest `^29.7.0` (`npm test`)
 - Dev: `nodemon`, `cross-env`, `electron-reloader`, `ts-node` (dev)
 
+## Next.js Web Prototype
+
+| Layer | Technology | Notes |
+|--------|------------|--------|
+| App framework | Next.js + React | Lives in `web-prototype/`; this is the production target UI. |
+| Persistence | Browser IndexedDB | Canonical local data path via `web-prototype/src/lib/db.ts` and `use-pos-store.ts`. |
+| Offline sync model | Local sync queue | Simulated queue persisted in IndexedDB; no required backend for the default prototype runtime. |
+| Printer support | Web Serial, Web Bluetooth, LAN bridge | ESC/POS generation and queueing are browser-side. |
+| Experimental server path | Next.js route handlers + `@libsql/client` | Present in `web-prototype/src/app/api/` and `src/lib/server/` as reference or future migration work, not the default runtime path. |
+
 ## Version
 
 Current app version: see `version` in root `package.json` (e.g. `1.5.3` at last sync).
@@ -90,3 +100,38 @@ Current app version: see `version` in root `package.json` (e.g. `1.5.3` at last 
 ### Web Prototype — New TypeScript Types
 
 New data model interfaces added to `web-prototype/src/lib/types.ts` for BIR settings, printer profiles, audit events, receipt templates, and report metadata.
+
+### Web Prototype — Thermal Printer ESC/POS Module
+
+Browser-compatible ESC/POS command generation for real thermal printers, located in `web-prototype/src/lib/printer/`.
+
+| File | Purpose |
+|---|---|
+| `escpos-commands.ts` | `EscPosBuilder` class: init, text, alignment, bold/double-height, barcodes (CODE128, EAN13), QR codes, line feeds, full/partial cuts, pulse (cash drawer). Also exports functional helpers. |
+| `receipt-content.ts` | `buildReceipt(variant, profile, bir, data, options?)` — generates `Uint8Array` of ESC/POS bytes for receipt variants: normal, void, reprint, x-reading, z-reading, daily-summary. Supports 58mm (32 chars) and 80mm (48 chars) paper widths. |
+| `escpos-commands.test.ts` | 33 unit tests covering EscPosBuilder commands and functional helpers. |
+| `receipt-content.test.ts` | 22 unit tests covering all receipt variants, BIR header output, item details, payment method labels, and X/Z reading reports. |
+
+**Connection methods:** Web Serial API (USB), Web Bluetooth API, HTTP LAN bridge for network printers.
+
+**Test framework:** Vitest (`npm test` from `web-prototype/`). TypeScript checking via `npm run typecheck`.
+
+## 2026-04-26 - codex savepoint
+
+- Re-centered the Next.js prototype on IndexedDB as the default runtime path, while leaving the newer Next.js API/libSQL files in place as experimental reference work.
+
+
+### Web Prototype — Thermal Printer ESC/POS Module
+
+Browser-compatible ESC/POS command generation for real thermal printers, located in `web-prototype/src/lib/printer/`.
+
+| File | Purpose |
+|---|---|
+| `escpos-commands.ts` | `EscPosBuilder` class: init, text, alignment, bold/double-height, barcodes (CODE128, EAN13), QR codes, line feeds, full/partial cuts, pulse (cash drawer). Also exports functional helpers: `line()`, `text()`, `align()`, `bold()`, `doubleHeight()`, `normalSize()`, `initPrinter()`, `feedLines()`, `cut()`. |
+| `receipt-content.ts` | `buildReceipt(variant, profile, bir, data, options?)` — generates `Uint8Array` of ESC/POS bytes for receipt variants: `normal`, `void`, `reprint`, `x-reading`, `z-reading`, `daily-summary`. Supports 58mm (32 chars) and 80mm (48 chars) paper widths. |
+| `escpos-commands.test.ts` | 33 unit tests covering EscPosBuilder commands and functional helpers. |
+| `receipt-content.test.ts` | 22 unit tests covering all receipt variants, BIR header output, item details, payment method labels, and X/Z reading reports. |
+
+**Connection methods:** Web Serial API (USB), Web Bluetooth API, HTTP LAN bridge for network printers.
+
+**Test framework:** Vitest (`npm test` from `web-prototype/`). TypeScript checking via `npm run typecheck`.

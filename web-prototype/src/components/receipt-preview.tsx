@@ -1,6 +1,9 @@
 "use client";
 
-import type { Transaction } from "@/lib/types";
+import { useState } from "react";
+import type { Transaction, PrinterProfile } from "@/lib/types";
+import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
+import { getAll } from "@/lib/db";
 
 function formatPeso(n: number): string {
   return "₱" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -13,12 +16,36 @@ type ReceiptPreviewProps = {
 };
 
 export function ReceiptPreview({ variant = "normal", onClose, transaction }: ReceiptPreviewProps) {
+  const [printStatus, setPrintStatus] = useState<string | null>(null);
   const tx = transaction;
   const items = tx?.items ?? [];
   const scPwdMeta = tx?.scPwdMetadata;
   const hasScPwd = Boolean(scPwdMeta);
   const dateStr = tx ? new Date(tx.createdAt).toLocaleString("en-PH") : new Date().toLocaleString("en-PH");
   const orNumber = tx?.localNumber ?? "000049920";
+
+  async function handleThermalPrint() {
+    if (!tx) return;
+    setPrintStatus("Connecting…");
+    const profiles = (await getAll("printerProfiles")) as PrinterProfile[];
+    const printer = profiles.find((p) => p.isDefault && (p.role === "or" || p.role === "both"))
+      ?? profiles.find((p) => p.role === "or" || p.role === "both");
+    if (!printer) {
+      setPrintStatus("No OR printer configured");
+      return;
+    }
+    const service = new PrinterService(createPrinterBackend);
+    const connectResult = await service.connect(printer);
+    if (connectResult.status !== "success") {
+      setPrintStatus(`Failed: ${connectResult.status}`);
+      await service.disconnect();
+      return;
+    }
+    const commands = buildReceipt(variant, printer, undefined, tx);
+    const result = await service.print(commands);
+    await service.disconnect();
+    setPrintStatus(result.status === "success" ? "Printed" : `Failed: ${result.status}`);
+  }
 
   return (
     <div className="receipt-preview">
@@ -39,7 +66,7 @@ export function ReceiptPreview({ variant = "normal", onClose, transaction }: Rec
 
       {/* Store header */}
       <div className="receipt-center">
-        <div className="receipt-store-name">PharmaSpot Drug Store</div>
+        <div className="receipt-store-name">PharmaPOS PH Drug Store</div>
         <div>123 Main Street, Quezon City</div>
         <div>TIN: 123-456-789-000</div>
         <div>PTU No: FPU0000001234</div>
@@ -179,12 +206,27 @@ export function ReceiptPreview({ variant = "normal", onClose, transaction }: Rec
         </div>
       )}
 
-      {/* Close button */}
-      {onClose && (
-        <button onClick={onClose} style={{ marginTop: 12, width: "100%" }}>
-          Close Preview
+      {/* Print buttons */}
+      <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
+        <button
+          className="primary"
+          onClick={handleThermalPrint}
+          disabled={!tx || printStatus === "Connecting…"}
+          style={{ width: "100%" }}
+        >
+          {printStatus === "Connecting…" ? "Printing…" : "Print to Thermal"}
         </button>
-      )}
+        {printStatus && (
+          <div style={{ fontSize: 12, textAlign: "center", color: printStatus.startsWith("Failed") ? "var(--danger)" : "var(--success)" }}>
+            {printStatus}
+          </div>
+        )}
+        {onClose && (
+          <button onClick={onClose} style={{ width: "100%" }}>
+            Close Preview
+          </button>
+        )}
+      </div>
     </div>
   );
 }

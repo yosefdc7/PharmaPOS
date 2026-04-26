@@ -348,7 +348,18 @@ export type PrinterProfile = {
   role: PrinterRole;
   isDefault: boolean;
   status: PrinterStatusType;
+  baudRate?: number;
+  bridgeUrl?: string;
+  deviceId?: string;
+  portInfo?: { vendorId?: number; productId?: number; serialNumber?: string };
 };
+
+export type PrintJobResult =
+  | { status: "success" }
+  | { status: "failed"; retryable: boolean; reason: string }
+  | { status: "offline"; retryable: boolean }
+  | { status: "paper-low"; retryable: boolean }
+  | { status: "error"; retryable: boolean; reason: string };
 
 export type ReceiptLayoutConfig = {
   logoUrl: string;

@@ -1,4 +1,4 @@
-# PharmaSpot Web Prototype
+# PharmaPOS PH Web Prototype
 
 Interactive offline-first POS prototype for the Next.js migration.
 

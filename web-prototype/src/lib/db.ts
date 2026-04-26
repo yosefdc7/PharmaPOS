@@ -9,18 +9,27 @@ import {
   seedUsers
 } from "./seed";
 import type {
+  AuditEntry,
+  BirSettings,
   Category,
   Customer,
   HeldOrder,
+  PrinterActivityLog,
+  PrinterProfile,
   Product,
+  ReprintQueueItem,
   Settings,
   SyncQueueItem,
   Transaction,
-  User
+  User,
+  XReading,
+  ZReading,
+  PrescriptionDraft,
+  RxSettings
 } from "./types";
 
 const DB_NAME = "pharmaspot-web-prototype";
-const DB_VERSION = 3;
+const DB_VERSION = 5;
 
 export type StoreName =
   | "meta"
@@ -31,7 +40,16 @@ export type StoreName =
   | "settings"
   | "transactions"
   | "heldOrders"
-  | "syncQueue";
+  | "syncQueue"
+  | "birSettings"
+  | "printerProfiles"
+  | "auditLog"
+  | "printerActivity"
+  | "prescriptions"
+  | "rxSettings"
+  | "xReadings"
+  | "zReadings"
+  | "reprintQueue";
 
 const STORES: StoreName[] = [
   "meta",
@@ -42,7 +60,16 @@ const STORES: StoreName[] = [
   "settings",
   "transactions",
   "heldOrders",
-  "syncQueue"
+  "syncQueue",
+  "birSettings",
+  "printerProfiles",
+  "auditLog",
+  "printerActivity",
+  "prescriptions",
+  "rxSettings",
+  "xReadings",
+  "zReadings",
+  "reprintQueue"
 ];
 
 type StoreEntityMap = {
@@ -55,6 +82,15 @@ type StoreEntityMap = {
   transactions: Transaction;
   heldOrders: HeldOrder;
   syncQueue: SyncQueueItem;
+  birSettings: BirSettings;
+  printerProfiles: PrinterProfile;
+  auditLog: AuditEntry;
+  printerActivity: PrinterActivityLog;
+  prescriptions: PrescriptionDraft;
+  rxSettings: RxSettings;
+  xReadings: XReading;
+  zReadings: ZReading;
+  reprintQueue: ReprintQueueItem;
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -94,6 +130,16 @@ function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number
     };
     tx.objectStore("meta").put({ id: "schemaVersion", value: 3 });
   }
+
+  // V4: new stores for Phase 1 backend wiring
+  if (oldVersion < 4) {
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 4 });
+  }
+
+  // V5: add reprintQueue store for Phase 2 thermal printer
+  if (oldVersion < 5) {
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 5 });
+  }
 }
 
 export function openPosDb(): Promise<IDBDatabase> {
@@ -114,14 +160,14 @@ export function openPosDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
+export function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
-function completeTransaction(tx: IDBTransaction): Promise<void> {
+export function completeTransaction(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -141,7 +187,8 @@ export async function getOne<TStore extends StoreName>(
   id: string
 ): Promise<StoreEntityMap[TStore] | undefined> {
   const db = await openPosDb();
-  return promisifyRequest(db.transaction(storeName, "readonly").objectStore(storeName).get(id));
+  const result = await promisifyRequest(db.transaction(storeName, "readonly").objectStore(storeName).get(id));
+  return result as StoreEntityMap[TStore] | undefined;
 }
 
 export async function putOne<TStore extends StoreName>(
@@ -150,7 +197,7 @@ export async function putOne<TStore extends StoreName>(
 ): Promise<void> {
   const db = await openPosDb();
   const tx = db.transaction(storeName, "readwrite");
-  tx.objectStore(storeName).put(value);
+  tx.objectStore(storeName).put(value as StoreEntityMap[TStore]);
   await completeTransaction(tx);
 }
 
@@ -181,6 +228,29 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<Fea
   const next = mergeFeatureFlags({ ...(await getFeatureFlags()), ...flags });
   await putOne("meta", { id: "featureFlags", value: next });
   return next;
+}
+
+export async function login(
+  username: string,
+  password: string
+): Promise<{ auth: boolean; user?: User }> {
+  const users = await getAll("users");
+  const user = users.find((candidate) => candidate.username === username);
+  if (!user) {
+    return { auth: false };
+  }
+
+  // The offline-first prototype stores demo users without password hashes.
+  // Keep authentication local by accepting the seeded demo credentials.
+  const validPassword =
+    (username === "admin" && password === "admin") ||
+    (username === "cashier" && password === "cashier");
+
+  if (!validPassword) {
+    return { auth: false };
+  }
+
+  return { auth: true, user };
 }
 
 export async function enqueueSync(
@@ -216,7 +286,14 @@ export async function markPendingSyncAsSynced(): Promise<void> {
 
 export async function seedIfNeeded(): Promise<void> {
   const seeded = await getOne("meta", "seeded");
-  if (seeded) return;
+  if (seeded) {
+    // Check if store name has changed and needs updating
+    const existing = await getOne("settings", "store");
+    if (existing && existing.store !== seedSettings.store) {
+      await putOne("settings", seedSettings);
+    }
+    return;
+  }
 
   await putMany("categories", seedCategories);
   await putMany("products", seedProducts);

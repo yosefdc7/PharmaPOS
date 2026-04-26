@@ -1,0 +1,227 @@
+from pathlib import Path
+
+BASE = Path(r"c:\Users\josef\Vibe Apps2\PPOS\web-prototype\src")
+
+files = {
+    BASE / "lib" / "server" / "db.test.ts": r"""import { beforeEach, describe, expect, it } from "vitest";
+import type { Client } from "@libsql/client";
+import { getDb, resetDbSingleton } from "@/lib/server/db";
+import { ensureDb, resetInitialized } from "@/lib/server/init";
+
+describe("SQLite backend repository", () => {
+  let db: Client;
+
+  beforeEach(async () => {
+    resetDbSingleton();
+    resetInitialized();
+    db = getDb(":memory:");
+    await ensureDb(db);
+  });
+
+  it("seeds demo data on first init", async () => {
+    const products = await db.execute("SELECT COUNT(*) as count FROM products");
+    const users = await db.execute("SELECT * FROM users WHERE username = 'admin'");
+
+    expect(Number(products.rows[0].count)).toBeGreaterThan(3);
+    expect(users.rows.length).toBe(1);
+    expect(users.rows[0].username).toBe("admin");
+  });
+
+  it("does not re-seed on subsequent inits", async () => {
+    const productsBefore = await db.execute("SELECT COUNT(*) as count FROM products");
+    const countBefore = Number(productsBefore.rows[0].count);
+
+    // Re-run ensureDb with the same db instance (should be no-op due to seeded flag)
+    await ensureDb(db);
+
+    const productsAfter = await db.execute("SELECT COUNT(*) as count FROM products");
+    const countAfter = Number(productsAfter.rows[0].count);
+
+    expect(countAfter).toBe(countBefore);
+  });
+
+  it("queues local changes and marks them synced", async () => {
+    await db.execute({
+      sql: "INSERT INTO sync_queue (id, entity, operation, payload, created_at, status, retry_count, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: ["sq-1", "transaction", "create", '{"id":"txn-1"}', new Date().toISOString(), "pending", 0, ""],
+    });
+
+    const pending = await db.execute("SELECT * FROM sync_queue WHERE status = 'pending'");
+    expect(pending.rows.length).toBe(1);
+    expect(pending.rows[0].status).toBe("pending");
+
+    await db.execute("UPDATE sync_queue SET status = 'synced' WHERE status = 'pending'");
+    await db.execute("UPDATE transactions SET sync_status = 'synced' WHERE sync_status = 'pending'");
+
+    const synced = await db.execute("SELECT * FROM sync_queue WHERE id = 'sq-1'");
+    expect(synced.rows[0].status).toBe("synced");
+  });
+});
+""",
+    BASE / "lib" / "server" / "db.integration.test.ts": r"""import { beforeEach, describe, expect, it } from "vitest";
+import type { Client } from "@libsql/client";
+import { getDb, resetDbSingleton } from "@/lib/server/db";
+import { ensureDb, resetInitialized } from "@/lib/server/init";
+
+describe("db feature-flag migration", () => {
+  let db: Client;
+
+  beforeEach(async () => {
+    resetDbSingleton();
+    resetInitialized();
+    db = getDb(":memory:");
+    await ensureDb(db);
+  });
+
+  it("seeds a backward-compatible flag record", async () => {
+    const result = await db.execute({
+      sql: "SELECT value FROM _meta WHERE id = ?",
+      args: ["featureFlags"],
+    });
+    const flags = JSON.parse(result.rows[0].value as string);
+    expect(flags).toEqual({ sync: false, payments: false, refunds: false });
+  });
+
+  it("supports staged rollout by enabling one surface at a time", async () => {
+    await db.execute({
+      sql: "UPDATE _meta SET value = ? WHERE id = ?",
+      args: [JSON.stringify({ sync: true, payments: false, refunds: false }), "featureFlags"],
+    });
+
+    const result = await db.execute({
+      sql: "SELECT value FROM _meta WHERE id = ?",
+      args: ["featureFlags"],
+    });
+    const flags = JSON.parse(result.rows[0].value as string);
+    expect(flags).toEqual({ sync: true, payments: false, refunds: false });
+  });
+});
+""",
+    BASE / "lib" / "server" / "auth.test.ts": r"""import { beforeEach, describe, expect, it } from "vitest";
+import type { Client } from "@libsql/client";
+import bcrypt from "bcryptjs";
+import { getDb, resetDbSingleton } from "@/lib/server/db";
+import { ensureDb, resetInitialized } from "@/lib/server/init";
+
+describe("auth - login and password hashing", () => {
+  let db: Client;
+
+  beforeEach(async () => {
+    resetDbSingleton();
+    resetInitialized();
+    db = getDb(":memory:");
+    await ensureDb(db);
+  });
+
+  it("hashes and verifies passwords with bcrypt", async () => {
+    const hash = await bcrypt.hash("test-password", 10);
+    expect(hash).not.toBe("test-password");
+    expect(await bcrypt.compare("test-password", hash)).toBe(true);
+    expect(await bcrypt.compare("wrong-password", hash)).toBe(false);
+  });
+
+  it("seed admin has valid bcrypt hash", async () => {
+    const result = await db.execute({
+      sql: "SELECT password_hash FROM users WHERE username = ?",
+      args: ["admin"],
+    });
+    expect(result.rows.length).toBe(1);
+    const hash = result.rows[0].password_hash as string;
+    expect(await bcrypt.compare("admin", hash)).toBe(true);
+    expect(await bcrypt.compare("wrong", hash)).toBe(false);
+  });
+
+  it("seed cashier has valid bcrypt hash", async () => {
+    const result = await db.execute({
+      sql: "SELECT password_hash FROM users WHERE username = ?",
+      args: ["cashier"],
+    });
+    expect(result.rows.length).toBe(1);
+    const hash = result.rows[0].password_hash as string;
+    expect(await bcrypt.compare("cashier", hash)).toBe(true);
+  });
+});
+""",
+    BASE / "lib" / "server" / "migrations.integration.test.ts": r"""import { beforeEach, describe, expect, it } from "vitest";
+import type { Client } from "@libsql/client";
+import { getDb, resetDbSingleton } from "@/lib/server/db";
+import { ensureDb, resetInitialized } from "@/lib/server/init";
+
+describe("staging rollback procedure", () => {
+  let db: Client;
+
+  beforeEach(async () => {
+    resetDbSingleton();
+    resetInitialized();
+    db = getDb(":memory:");
+    await ensureDb(db);
+  });
+
+  it("can disable risky surfaces as rollback kill-switches", async () => {
+    // Enable all
+    await db.execute({
+      sql: "UPDATE _meta SET value = ? WHERE id = ?",
+      args: [JSON.stringify({ sync: true, payments: true, refunds: true }), "featureFlags"],
+    });
+
+    // Disable all (rollback)
+    await db.execute({
+      sql: "UPDATE _meta SET value = ? WHERE id = ?",
+      args: [JSON.stringify({ sync: false, payments: false, refunds: false }), "featureFlags"],
+    });
+
+    const result = await db.execute({
+      sql: "SELECT value FROM _meta WHERE id = ?",
+      args: ["featureFlags"],
+    });
+    const flags = JSON.parse(result.rows[0].value as string);
+    expect(flags).toEqual({ sync: false, payments: false, refunds: false });
+  });
+});
+""",
+    BASE / "contracts" / "sync.contract.test.ts": r"""import { beforeEach, describe, expect, it } from "vitest";
+import type { Client } from "@libsql/client";
+import { getDb, resetDbSingleton } from "@/lib/server/db";
+import { ensureDb, resetInitialized } from "@/lib/server/init";
+
+describe("sync queue contract", () => {
+  let db: Client;
+
+  beforeEach(async () => {
+    resetDbSingleton();
+    resetInitialized();
+    db = getDb(":memory:");
+    await ensureDb(db);
+  });
+
+  it("writes queue items matching the offline-sync contract", async () => {
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+
+    await db.execute({
+      sql: "INSERT INTO sync_queue (id, entity, operation, payload, created_at, status, retry_count, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [id, "transaction", "create", '{"id":"txn-123"}', createdAt, "pending", 0, ""],
+    });
+
+    const result = await db.execute({
+      sql: "SELECT * FROM sync_queue WHERE id = ?",
+      args: [id],
+    });
+
+    expect(result.rows.length).toBe(1);
+    const item = result.rows[0];
+    expect(item.entity).toBe("transaction");
+    expect(item.operation).toBe("create");
+    expect(item.status).toBe("pending");
+    expect(Number(item.retry_count)).toBe(0);
+    expect(item.last_error).toBe("");
+    expect(typeof item.id).toBe("string");
+    expect(typeof item.created_at).toBe("string");
+  });
+});
+""",
+}
+
+for path, content in files.items():
+    path.write_text(content, encoding="utf-8")
+    print(f"Written: {path.name}")

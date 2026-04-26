@@ -28,5 +28,7 @@ Only include sections that apply.
 
 ### Project Notes
 
-- Electron remains available as the reference/fallback app.
-- `web-prototype/` is the long-term POS direction.
+- **Electron app is deprecated** — retained in repo as logic reference only.
+- `web-prototype/` is the **production target** (offline-first PWA with IndexedDB).
+- API routes in `api/` serve as reference for logic; web prototype uses IndexedDB via `web-prototype/src/lib/server/`.
+- Update `docs/PRD.md` and `docs/TECH_STACK.md` when product scope or technology changes.

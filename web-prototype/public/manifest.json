@@ -1,6 +1,6 @@
 {
-  "name": "PharmaSpot Web POS",
-  "short_name": "PharmaSpot",
+  "name": "PharmaPOS PH Web POS",
+  "short_name": "PharmaPOS PH",
   "description": "Offline-first POS prototype",
   "start_url": "/",
   "display": "standalone",

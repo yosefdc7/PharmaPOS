@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, FormEvent, useMemo } from "react";
-import type { BirSettings, ScPwdEligibility, ScPwdSettings } from "@/lib/types";
+import { useState, FormEvent, useMemo, useEffect } from "react";
+import { getOne, putOne } from "../lib/db";
+import type { BirSettings, ScPwdEligibility, ScPwdSettings, Settings } from "@/lib/types";
 
 function validateTin(value: string): boolean {
   return /^\d{3}-\d{3}-\d{3}-\d{3}$/.test(value);
@@ -15,29 +16,45 @@ function validateNonEmpty(value: string): boolean {
   return value.trim().length > 0;
 }
 
-export function BirSettingsPanel() {
-  const [birSettings, setBirSettings] = useState<BirSettings>({
-    tin: "123-456-789-000",
-    registeredName: "PharmaSpot Drug Store",
-    registeredAddress: "123 Main Street, Quezon City",
-    vatRegistered: true,
-    ptuNumber: "FPU0000001234",
-    machineSerial: "SN-2024-001",
-    accreditationNumber: "0123456789012345678901234",
-    orSeriesStart: 1,
-    orSeriesEnd: 50000,
-    currentOrNumber: 49920,
-    zReadingCutoffTime: "23:59",
-  });
+const DEFAULT_BIR_SETTINGS: BirSettings = {
+  tin: "",
+  registeredName: "",
+  registeredAddress: "",
+  vatRegistered: false,
+  ptuNumber: "",
+  machineSerial: "",
+  accreditationNumber: "",
+  orSeriesStart: 1,
+  orSeriesEnd: 50000,
+  currentOrNumber: 1,
+  zReadingCutoffTime: "23:59",
+};
 
-  const [scPwdSettings, setScPwdSettings] = useState<ScPwdSettings>({
-    enabled: true,
-    discountRate: 20,
-    vatRegistered: true,
-    defaultMedicineEligibility: "medicine",
-    duplicateIdThreshold: 2,
-    dailyAlertThreshold: 5,
-  });
+const DEFAULT_SCPWD_SETTINGS: ScPwdSettings = {
+  enabled: false,
+  discountRate: 20,
+  vatRegistered: false,
+  defaultMedicineEligibility: "medicine",
+  duplicateIdThreshold: 2,
+  dailyAlertThreshold: 5,
+};
+
+export function BirSettingsPanel() {
+  const [birSettings, setBirSettings] = useState<BirSettings>(DEFAULT_BIR_SETTINGS);
+  const [scPwdSettings, setScPwdSettings] = useState<ScPwdSettings>(DEFAULT_SCPWD_SETTINGS);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      const savedBir = await getOne("birSettings", "bir") as BirSettings | undefined;
+      const savedSettings = await getOne("settings", "store") as ({ scPwdSettings?: ScPwdSettings } & Record<string, unknown>) | undefined;
+      if (savedBir) setBirSettings(savedBir);
+      if (savedSettings?.scPwdSettings) setScPwdSettings(savedSettings.scPwdSettings);
+      setLoaded(true);
+    }
+    load();
+  }, []);
 
   const validations = useMemo(() => ({
     tin: validateTin(birSettings.tin),
@@ -58,8 +75,29 @@ export function BirSettingsPanel() {
     setBirSettings((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setSaving(true);
+    try {
+      await putOne("birSettings", birSettings);
+      const existing = (await getOne("settings", "store") as Record<string, unknown> | undefined) ?? {};
+      await putOne("settings", {
+        id: "store",
+        store: (existing.store as string) ?? "",
+        addressOne: (existing.addressOne as string) ?? "",
+        addressTwo: (existing.addressTwo as string) ?? "",
+        contact: (existing.contact as string) ?? "",
+        currencySymbol: (existing.currencySymbol as string) ?? "Php",
+        vatPercentage: (existing.vatPercentage as number) ?? 12,
+        chargeTax: (existing.chargeTax as boolean) ?? true,
+        quickBilling: (existing.quickBilling as boolean) ?? false,
+        receiptFooter: (existing.receiptFooter as string) ?? "",
+        expiryAlertDays: (existing.expiryAlertDays as number) ?? 30,
+        scPwdSettings,
+      } as Settings);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -231,7 +269,9 @@ export function BirSettingsPanel() {
           )}
         </div>
 
-        <button className="primary" type="submit">Save BIR Settings</button>
+        <button className="primary" type="submit" disabled={saving}>
+          {saving ? "Saving..." : "Save BIR Settings"}
+        </button>
 
         <hr style={{ margin: "24px 0" }} />
 

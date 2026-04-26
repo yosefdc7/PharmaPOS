@@ -10,10 +10,12 @@
 - [inventory.js](file://api/inventory.js)
 - [transactions.js](file://api/transactions.js)
 - [responsive.css](file://assets/css/responsive.css)
+- [modern-ui.css](file://assets/css/modern-ui.css)
 - [pos-prototype.tsx](file://web-prototype/src/components/pos-prototype.tsx)
 - [rx-workspace.tsx](file://web-prototype/src/components/rx-workspace.tsx)
 - [scpwd-discount-modal.tsx](file://web-prototype/src/components/scpwd-discount-modal.tsx)
 - [receipt-preview.tsx](file://web-prototype/src/components/receipt-preview.tsx)
+- [use-pos-store.ts](file://web-prototype/src/lib/use-pos-store.ts)
 - [types.ts](file://web-prototype/src/lib/types.ts)
 - [calculations.ts](file://web-prototype/src/lib/calculations.ts)
 - [dd-stock-reconciliation.tsx](file://web-prototype/src/components/dd-stock-reconciliation.tsx)
@@ -25,13 +27,12 @@
 
 ## Update Summary
 **Changes Made**
-- Enhanced POS interface documentation to include RX workspace integration with controlled drug management
-- Added comprehensive SC/PWD discount application system with modal interface and eligibility validation
-- Integrated controlled drug management with classification badges and dispensing checkpoints
-- Improved expiration date tracking with enhanced alert systems and product categorization
-- Added new receipt preview functionality with SC/PWD discount display
-- Updated product categorization system with drug classification badges
-- Enhanced POS workflow to support both traditional POS and RX workspace modes
+- Enhanced POS interface with simplified action buttons and improved visual hierarchy
+- Streamlined stock management controls with direct 'mark expired' functionality
+- Unified product editor with improved delete confirmation flow
+- Refined confirmation dialogs with better user feedback and visual consistency
+- Updated modern UI styling with enhanced responsive design and accessibility
+- Improved keyboard input handling and payment processing with streamlined workflows
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -39,40 +40,45 @@
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [RX Workspace Integration](#rx-workspace-integration)
-7. [SC/PWD Discount System](#scpwd-discount-system)
-8. [Controlled Drug Management](#controlled-drug-management)
-9. [Enhanced Product Categorization](#enhanced-product-categorization)
-10. [Improved Expiration Date Tracking](#improved-expiration-date-tracking)
-11. [Enhanced Receipt Preview](#enhanced-receipt-preview)
-12. [Dependency Analysis](#dependency-analysis)
-13. [Performance Considerations](#performance-considerations)
-14. [Troubleshooting Guide](#troubleshooting-guide)
-15. [Conclusion](#conclusion)
+6. [Enhanced User Interface](#enhanced-user-interface)
+7. [Streamlined Action Buttons](#streamlined-action-buttons)
+8. [Improved Confirmation Dialogs](#improved-confirmation-dialogs)
+9. [Refined Product Management Workflow](#refined-product-management-workflow)
+10. [Modern UI Styling](#modern-ui-styling)
+11. [Responsive Design Enhancements](#responsive-design-enhancements)
+12. [Enhanced Receipt Preview](#enhanced-receipt-preview)
+13. [Dependency Analysis](#dependency-analysis)
+14. [Performance Considerations](#performance-considerations)
+15. [Troubleshooting Guide](#troubleshooting-guide)
+16. [Conclusion](#conclusion)
 
 ## Introduction
 PharmaSpot is a comprehensive Point-of-Sale (POS) application built with Electron, jQuery, and Express.js, featuring advanced RX workspace integration, SC/PWD discount application, controlled drug management, and enhanced expiration date tracking. The POS interface provides a unified retail solution with product display grids, cart management, barcode scanning, real-time pricing, tax calculation, order printing, and specialized pharmaceutical workflow management.
 
+**Updated** The interface now features enhanced user experience with simplified action buttons, improved confirmation dialogs, and refined product management workflow that streamlines the POS operations while maintaining all core functionality. The recent updates focus on simplifying action buttons, streamlining stock management controls, and refining confirmation dialogs for better user feedback.
+
 ## Project Structure
-The POS interface has evolved to support both traditional retail operations and pharmaceutical-specific workflows through a modular architecture with RX workspace integration.
+The POS interface has evolved to support both traditional retail operations and pharmaceutical-specific workflows through a modular architecture with enhanced UI components and streamlined workflows.
 
 ```mermaid
 graph TB
-subgraph "Traditional POS Frontend"
+subgraph "Enhanced Traditional POS Frontend"
 HTML["index.html"]
 POS["assets/js/pos.js"]
 Checkout["assets/js/checkout.js"]
 Utils["assets/js/utils.js"]
 Filter["assets/js/product-filter.js"]
 Responsive["assets/css/responsive.css"]
+ModernUI["assets/css/modern-ui.css"]
 end
-subgraph "Enhanced Web Prototype"
+subgraph "Advanced Web Prototype"
 PosProto["web-prototype/src/components/pos-prototype.tsx"]
 RxWorkspace["web-prototype/src/components/rx-workspace.tsx"]
 ScPwdModal["web-prototype/src/components/scpwd-discount-modal.tsx"]
 ReceiptPreview["web-prototype/src/components/receipt-preview.tsx"]
-Calculations["web-prototype/src/lib/calculations.ts"]
+UsePosStore["web-prototype/src/lib/use-pos-store.ts"]
 Types["web-prototype/src/lib/types.ts"]
+Calculations["web-prototype/src/lib/calculations.ts"]
 end
 subgraph "Backend APIs"
 Inventory["api/inventory.js"]
@@ -85,12 +91,14 @@ POS --> Transactions
 POS --> Utils
 Filter --> HTML
 Responsive --> HTML
+ModernUI --> HTML
 PosProto --> RxWorkspace
 PosProto --> ScPwdModal
 PosProto --> ReceiptPreview
 RxWorkspace --> Calculations
 ScPwdModal --> Types
 ReceiptPreview --> Types
+UsePosStore --> Types
 ```
 
 **Diagram sources**
@@ -101,94 +109,99 @@ ReceiptPreview --> Types
 - [product-filter.js:1-73](file://assets/js/product-filter.js#L1-L73)
 - [inventory.js:1-333](file://api/inventory.js#L1-L333)
 - [transactions.js:1-251](file://api/transactions.js#L1-L251)
+- [modern-ui.css:1-739](file://assets/css/modern-ui.css#L1-L739)
 - [pos-prototype.tsx:1-200](file://web-prototype/src/components/pos-prototype.tsx#L1-L200)
 - [rx-workspace.tsx:1-166](file://web-prototype/src/components/rx-workspace.tsx#L1-L166)
 - [scpwd-discount-modal.tsx:1-218](file://web-prototype/src/components/scpwd-discount-modal.tsx#L1-L218)
 - [receipt-preview.tsx:1-191](file://web-prototype/src/components/receipt-preview.tsx#L1-L191)
-- [calculations.ts:1-196](file://web-prototype/src/lib/calculations.ts#L1-L196)
+- [use-pos-store.ts:1-671](file://web-prototype/src/lib/use-pos-store.ts#L1-L671)
 - [types.ts:1-525](file://web-prototype/src/lib/types.ts#L1-L525)
 
 **Section sources**
 - [index.html:194-289](file://index.html#L194-L289)
 - [pos.js:1-120](file://assets/js/pos.js#L1-L120)
+- [modern-ui.css:1-739](file://assets/css/modern-ui.css#L1-L739)
 - [pos-prototype.tsx:1-200](file://web-prototype/src/components/pos-prototype.tsx#L1-L200)
 
 ## Core Components
-- **Traditional POS Interface**: Core POS functionality with product display, cart management, and payment processing
+- **Enhanced POS Interface**: Simplified action buttons with improved visual hierarchy and streamlined workflow
+- **Modern UI Framework**: Updated styling with consistent design language and responsive layouts
+- **Streamlined Confirmation System**: Refined dialogs for critical operations with better user feedback
+- **Advanced Product Management**: Consolidated actions with improved product display and categorization
+- **Enhanced Receipt Processing**: Detailed receipt previews with SC/PWD discount displays and compliance formatting
+- **Improved Keyboard Input**: Streamlined payment processing with enhanced keypad functionality
 - **RX Workspace Integration**: Advanced pharmaceutical workflow with controlled drug management and prescription handling
 - **SC/PWD Discount System**: Comprehensive senior citizen and person with disability discount application with modal interface
-- **Controlled Drug Management**: Classification system with dispensing checkpoints and pharmacist acknowledgment requirements
-- **Enhanced Product Categorization**: Drug classification badges and controlled substance indicators
-- **Improved Expiration Tracking**: Advanced alert systems and product lifecycle management
-- **Enhanced Receipt Processing**: Detailed receipt previews with SC/PWD discount displays and compliance formatting
 
 **Section sources**
 - [pos.js:267-562](file://assets/js/pos.js#L267-L562)
 - [checkout.js:1-102](file://assets/js/checkout.js#L1-L102)
 - [utils.js:1-112](file://assets/js/utils.js#L1-L112)
 - [product-filter.js:1-73](file://assets/js/product-filter.js#L1-L73)
-- [rx-workspace.tsx:1-166](file://web-prototype/src/components/rx-workspace.tsx#L1-L166)
+- [modern-ui.css:1-739](file://assets/css/modern-ui.css#L1-L739)
+- [pos-prototype.tsx:1-200](file://web-prototype/src/components/pos-prototype.tsx#L1-L200)
 - [scpwd-discount-modal.tsx:1-218](file://web-prototype/src/components/scpwd-discount-modal.tsx#L1-L218)
 - [receipt-preview.tsx:1-191](file://web-prototype/src/components/receipt-preview.tsx#L1-L191)
 
 ## Architecture Overview
-The enhanced POS system maintains a client-server architecture while adding specialized pharmaceutical workflow capabilities through a hybrid approach supporting both traditional POS operations and RX workspace management.
+The enhanced POS system maintains a client-server architecture while adding specialized pharmaceutical workflow capabilities through a hybrid approach supporting both traditional POS operations and RX workspace management with improved user interface components.
 
 ```mermaid
 sequenceDiagram
 participant User as "User"
-participant UI as "POS Interface"
-participant RX as "RX Workspace"
-participant SC as "SC/PWD System"
+participant UI as "Enhanced POS Interface"
+participant ModernUI as "Modern UI Framework"
+participant ConfDialog as "Confirmation Dialogs"
 participant API as "Backend APIs"
-User->>UI : Navigate to POS or RX workspace
-UI->>RX : Initialize RX workspace if selected
-RX->>API : Load controlled drugs & prescriptions
-User->>SC : Apply SC/PWD discount
-SC->>SC : Validate eligibility & compute discount
-SC->>UI : Update cart totals with discount
-User->>UI : Traditional POS operations
-UI->>API : Process transactions
-API-->>UI : Transaction results
-UI->>UI : Generate enhanced receipt
+User->>UI : Navigate to POS with simplified interface
+UI->>ModernUI : Apply enhanced styling and layout
+UI->>ConfDialog : Initialize streamlined confirmation system
+User->>ConfDialog : Perform critical operation
+ConfDialog->>ConfDialog : Show improved confirmation dialog
+ConfDialog->>UI : Return user confirmation
+UI->>API : Execute operation with enhanced feedback
+API-->>UI : Operation result with status
+UI->>UI : Update interface with visual feedback
 ```
 
 **Diagram sources**
 - [pos-prototype.tsx:31-39](file://web-prototype/src/components/pos-prototype.tsx#L31-L39)
-- [rx-workspace.tsx:90-103](file://web-prototype/src/components/rx-workspace.tsx#L90-L103)
-- [scpwd-discount-modal.tsx:29-42](file://web-prototype/src/components/scpwd-discount-modal.tsx#L29-L42)
+- [modern-ui.css:32-46](file://assets/css/modern-ui.css#L32-L46)
+- [pos.js:666-700](file://assets/js/pos.js#L666-L700)
 - [calculations.ts:84-123](file://web-prototype/src/lib/calculations.ts#L84-L123)
 
 ## Detailed Component Analysis
 
-### Product Display Grid
-The product display grid now supports enhanced categorization with drug classification badges and controlled substance indicators.
+### Enhanced Product Display Grid
+The product display grid now features simplified action buttons and improved visual hierarchy with consolidated product management actions.
 
 ```mermaid
 flowchart TD
 Start(["Load Products"]) --> Fetch["GET /inventory/products"]
 Fetch --> Classify["Classify by drug type<br/>DD, EDD, Rx, OTC"]
-Classify --> Render["Render product tiles<br/>with classification badges"]
+Classify --> Render["Render product tiles<br/>with simplified action buttons"]
 Render --> Filter["Filter by category/search<br/>and drug classification"]
 Filter --> Click{"User clicks product?"}
 Click --> |Yes| Validate["Validate stock/expiry<br/>and controlled drug status"]
-Validate --> |Valid| Add["Add to cart"]
-Validate --> |Invalid| Notify["Show validation warning"]
+Validate --> |Valid| Add["Add to cart with visual feedback"]
+Validate --> |Invalid| Notify["Show validation warning<br/>with improved dialog"]
 Click --> |No| End(["Idle"])
 ```
 
 **Diagram sources**
 - [pos.js:267-354](file://assets/js/pos.js#L267-L354)
+- [modern-ui.css:380-418](file://assets/css/modern-ui.css#L380-L418)
 - [pos-prototype.tsx:41-47](file://web-prototype/src/components/pos-prototype.tsx#L41-L47)
 - [product-filter.js:1-31](file://assets/js/product-filter.js#L1-L31)
 
 **Section sources**
 - [pos.js:267-354](file://assets/js/pos.js#L267-L354)
+- [modern-ui.css:380-418](file://assets/css/modern-ui.css#L380-L418)
 - [pos-prototype.tsx:41-47](file://web-prototype/src/components/pos-prototype.tsx#L41-L47)
 - [product-filter.js:1-31](file://assets/js/product-filter.js#L1-L31)
 
-### Cart Management System
-The cart management system now handles SC/PWD discounts and controlled drug dispensing requirements.
+### Streamlined Cart Management System
+The cart management system now handles SC/PWD discounts and controlled drug dispensing requirements with simplified action buttons and improved visual feedback.
 
 ```mermaid
 classDiagram
@@ -210,385 +223,265 @@ class POS {
 +qtInput(i)
 +deleteFromCart(index)
 }
-class ScPwdSystem {
-+validateEligibility()
-+calculateDiscount()
-+generateReceipt()
+class ModernUI {
++applyButtonStyles()
++updateVisualHierarchy()
++simplifyActionButtons()
 }
-class RxWorkspace {
-+buildDispensingCheckpoints()
-+validatePrescriptions()
-+manageControlledDrugs()
+class ConfDialog {
++showConfirmation(options)
++showSuccess(message)
++showWarning(message)
 }
 POS --> Cart : "manages"
-Cart --> ScPwdSystem : "integrates"
-Cart --> RxWorkspace : "validates"
+Cart --> ModernUI : "integrates styling"
+POS --> ConfDialog : "uses dialogs"
 ```
 
 **Diagram sources**
 - [pos.js:501-653](file://assets/js/pos.js#L501-L653)
 - [pos.js:533-562](file://assets/js/pos.js#L533-L562)
+- [modern-ui.css:550-560](file://assets/css/modern-ui.css#L550-L560)
+- [pos.js:666-700](file://assets/js/pos.js#L666-L700)
 - [calculations.ts:40-82](file://web-prototype/src/lib/calculations.ts#L40-L82)
-- [rx-workspace.tsx:59-88](file://web-prototype/src/components/rx-workspace.tsx#L59-L88)
 
 **Section sources**
 - [pos.js:501-653](file://assets/js/pos.js#L501-L653)
 - [pos.js:533-562](file://assets/js/pos.js#L533-L562)
+- [modern-ui.css:550-560](file://assets/css/modern-ui.css#L550-L560)
+- [pos.js:666-700](file://assets/js/pos.js#L666-L700)
 - [calculations.ts:40-82](file://web-prototype/src/lib/calculations.ts#L40-L82)
-- [rx-workspace.tsx:59-88](file://web-prototype/src/components/rx-workspace.tsx#L59-L88)
 
-### Barcode Scanning Integration
-Enhanced barcode scanning now includes controlled drug validation and SC/PWD eligibility checks.
+### Improved Barcode Scanning Integration
+Enhanced barcode scanning now includes controlled drug validation and SC/PWD eligibility checks with streamlined user feedback.
 
 ```mermaid
 sequenceDiagram
 participant User as "User"
-participant Form as "Barcode Form"
+participant Form as "Enhanced Barcode Form"
 participant POS as "pos.js"
-participant RX as "RxWorkspace"
+participant ModernUI as "Modern UI"
 participant API as "Inventory API"
 User->>Form : Enter SKU and submit
 Form->>POS : Submit handler
+POS->>ModernUI : Show loading indicator
 POS->>API : POST /product/sku {skuCode}
 API-->>POS : Product details
-POS->>RX : Validate controlled drug status
-RX->>POS : Check SC/PWD eligibility
+POS->>POS : Validate controlled drug status
+POS->>POS : Check SC/PWD eligibility
 POS->>POS : Validate expiry/stock
-POS->>POS : Add to cart or show error
+POS->>ModernUI : Show success with visual feedback
+POS->>POS : Add to cart or show error with dialog
 ```
 
 **Diagram sources**
 - [index.html:211-218](file://index.html#L211-L218)
 - [pos.js:413-488](file://assets/js/pos.js#L413-L488)
-- [rx-workspace.tsx:108-113](file://web-prototype/src/components/rx-workspace.tsx#L108-L113)
+- [modern-ui.css:562-578](file://assets/css/modern-ui.css#L562-L578)
 - [inventory.js:268-294](file://api/inventory.js#L268-L294)
 
 **Section sources**
 - [index.html:211-218](file://index.html#L211-L218)
 - [pos.js:413-488](file://assets/js/pos.js#L413-L488)
-- [rx-workspace.tsx:108-113](file://web-prototype/src/components/rx-workspace.tsx#L108-L113)
+- [modern-ui.css:562-578](file://assets/css/modern-ui.css#L562-L578)
 - [inventory.js:268-294](file://api/inventory.js#L268-L294)
 
-### Discount and Tax Calculation
-The discount system now includes comprehensive SC/PWD discount calculation with VAT exemption logic.
-
-```mermaid
-flowchart TD
-Start(["Calculate Cart"]) --> Sum["Sum items x quantity"]
-Sum --> ScPwdCheck{"SC/PWD discount active?"}
-ScPwdCheck --> |Yes| ScPwdCalc["Calculate SC/PWD discount<br/>per eligible item"]
-ScPwdCheck --> |No| ApplyDisc["Apply manual discount"]
-ScPwdCalc --> VatCheck{"VAT registered?"}
-VatCheck --> |Yes| VatExempt["Remove VAT from eligible items"]
-VatCheck --> |No| SkipVat["Skip VAT exemption"]
-VatExempt --> ApplyDisc
-SkipVat --> ApplyDisc
-ApplyDisc --> TaxCheck{"Tax enabled?"}
-TaxCheck --> |Yes| VAT["Compute VAT on taxable amount"]
-TaxCheck --> |No| SkipVAT["Skip VAT"]
-VAT --> Total["Total = taxable + VAT"]
-SkipVAT --> Total
-Total --> End(["Display enhanced totals"])
-```
-
-**Diagram sources**
-- [calculations.ts:84-123](file://web-prototype/src/lib/calculations.ts#L84-L123)
-- [pos.js:533-562](file://assets/js/pos.js#L533-L562)
-
-**Section sources**
-- [calculations.ts:84-123](file://web-prototype/src/lib/calculations.ts#L84-L123)
-- [pos.js:533-562](file://assets/js/pos.js#L533-L562)
-
-### Payment and Receipt Printing
-Enhanced payment processing now includes SC/PWD discount display and controlled drug compliance documentation.
+### Enhanced Payment and Receipt Processing
+Enhanced payment processing now includes SC/PWD discount display and controlled drug compliance documentation with improved user feedback.
 
 ```mermaid
 sequenceDiagram
 participant User as "User"
-participant POS as "pos.js"
-participant SC as "ScPwdSystem"
+participant POS as "Enhanced POS"
+participant ModernUI as "Modern UI"
+participant ScPwd as "ScPwdSystem"
 participant API as "Transactions API"
-participant Printer as "Printer"
-User->>POS : Click Pay
-POS->>SC : Check SC/PWD discount status
-SC->>POS : Return discount details
-POS->>POS : Calculate payable amount
-User->>POS : Enter payment via keypad
-POS->>POS : Calculate change
+User->>POS : Click Pay with simplified interface
+POS->>ModernUI : Show payment modal with improved styling
+POS->>ScPwd : Check SC/PWD discount status
+ScPwd->>POS : Return discount details
+POS->>POS : Calculate payable amount with visual feedback
+User->>POS : Enter payment via enhanced keypad
+POS->>POS : Calculate change with improved display
 POS->>API : POST /new {transaction with SC/PWD metadata}
-API-->>POS : Success
-POS->>POS : Build enhanced receipt HTML
-POS->>Printer : printJS(receipt with SC/PWD details)
-POS->>POS : Reset cart and reload lists
+API-->>POS : Success with status
+POS->>ModernUI : Show receipt preview with enhanced styling
+POS->>POS : Reset cart and reload lists with visual feedback
 ```
 
 **Diagram sources**
 - [checkout.js:1-102](file://assets/js/checkout.js#L1-L102)
 - [pos.js:719-959](file://assets/js/pos.js#L719-L959)
+- [modern-ui.css:550-560](file://assets/css/modern-ui.css#L550-L560)
 - [receipt-preview.tsx:15-191](file://web-prototype/src/components/receipt-preview.tsx#L15-L191)
 - [transactions.js:156-181](file://api/transactions.js#L156-L181)
 
 **Section sources**
 - [checkout.js:1-102](file://assets/js/checkout.js#L1-L102)
 - [pos.js:719-959](file://assets/js/pos.js#L719-L959)
+- [modern-ui.css:550-560](file://assets/css/modern-ui.css#L550-L560)
 - [receipt-preview.tsx:15-191](file://web-prototype/src/components/receipt-preview.tsx#L15-L191)
 - [transactions.js:156-181](file://api/transactions.js#L156-L181)
 
-## RX Workspace Integration
-The RX workspace provides comprehensive pharmaceutical workflow management with controlled drug oversight and prescription handling.
+## Enhanced User Interface
+The POS interface now features a modern, streamlined design with simplified action buttons and improved visual hierarchy that enhances user experience while maintaining all functionality.
+
+**Updated** The interface has been redesigned with a cleaner layout, more intuitive button placement, and consistent visual feedback across all operations. The simplified action buttons reduce cognitive load and improve task completion rates through clearer labeling and logical grouping.
 
 ```mermaid
 flowchart TD
-Workspace["RX Workspace"] --> Tabs["Tabbed Interface"]
-Tabs --> Classification["Classification Panel"]
-Tabs --> Dispensing["Dispensing Panel"]
-Tabs --> Profiles["Patient Profiles"]
-Tabs --> DDLog["DD Transaction Log"]
-Tabs --> Validation["Validation & Refusals"]
-Tabs --> DDInventory["DD Inventory Control"]
-Tabs --> Inspection["Inspection Dashboard"]
-Classification --> Checkpoints["Build Dispensing Checkpoints"]
-Dispensing --> PrescriptionDrawer["Prescription Entry Drawer"]
-Profiles --> MedicationHistory["Patient Medication History"]
-DDLog --> TransactionFlow["DD Transaction Flow"]
-DDInventory --> Reconciliation["Stock Reconciliation"]
-Inspection --> Compliance["Compliance Monitoring"]
+ModernUI["Modern UI Framework"] --> SimplifiedActions["Simplified Action Buttons"]
+ModernUI --> VisualHierarchy["Improved Visual Hierarchy"]
+ModernUI --> ResponsiveDesign["Enhanced Responsive Design"]
+SimplifiedActions --> ClearWorkflow["Clearer Workflow"]
+VisualHierarchy --> BetterUX["Better User Experience"]
+ResponsiveDesign --> MobileOptimized["Mobile Optimized"]
+ClearWorkflow --> ReducedComplexity["Reduced Complexity"]
+BetterUX --> IncreasedEfficiency["Increased Efficiency"]
+MobileOptimized --> CrossPlatform["Cross-Platform Support"]
 ```
 
 **Diagram sources**
-- [rx-workspace.tsx:49-57](file://web-prototype/src/components/rx-workspace.tsx#L49-L57)
-- [rx-workspace.tsx:118-165](file://web-prototype/src/components/rx-workspace.tsx#L118-L165)
+- [modern-ui.css:1-739](file://assets/css/modern-ui.css#L1-L739)
+- [pos-prototype.tsx:268-452](file://web-prototype/src/components/pos-prototype.tsx#L268-L452)
 
 **Section sources**
-- [rx-workspace.tsx:1-166](file://web-prototype/src/components/rx-workspace.tsx#L1-L166)
-- [pos-prototype.tsx:455-470](file://web-prototype/src/components/pos-prototype.tsx#L455-L470)
+- [modern-ui.css:1-739](file://assets/css/modern-ui.css#L1-L739)
+- [pos-prototype.tsx:268-452](file://web-prototype/src/components/pos-prototype.tsx#L268-L452)
 
-## SC/PWD Discount System
-The SC/PWD discount system provides comprehensive senior citizen and person with disability discount application with modal interface and eligibility validation.
+## Streamlined Action Buttons
+Action buttons have been simplified and consolidated to reduce cognitive load and improve task completion rates. The new design features larger touch targets, clearer labeling, and logical grouping of related actions.
 
-```mermaid
-sequenceDiagram
-participant Cashier as "Cashier"
-participant Modal as "SC/PWD Modal"
-participant Validation as "Eligibility Validator"
-participant Cart as "Cart System"
-Cashier->>Modal : Click "SC/PWD Discount" button
-Modal->>Cashier : Display ID entry form
-Cashier->>Modal : Enter ID details
-Modal->>Validation : Validate eligibility
-Validation->>Modal : Return validation result
-Modal->>Cart : Apply discount to eligible items
-Cart->>Cashier : Show discount breakdown
-Cashier->>Modal : Confirm discount application
-Modal->>Cashier : Close modal
-```
-
-**Diagram sources**
-- [scpwd-discount-modal.tsx:29-42](file://web-prototype/src/components/scpwd-discount-modal.tsx#L29-L42)
-- [calculations.ts:40-82](file://web-prototype/src/lib/calculations.ts#L40-L82)
-- [scpwd_user_stories.md:33-44](file://scpwd_user_stories.md#L33-L44)
+**Updated** The action buttons now use a more streamlined approach with reduced visual clutter and improved accessibility. The modern UI framework provides consistent styling with grid-based layouts that adapt to different screen sizes while maintaining usability standards.
 
 **Section sources**
-- [scpwd-discount-modal.tsx:1-218](file://web-prototype/src/components/scpwd-discount-modal.tsx#L1-L218)
-- [calculations.ts:40-82](file://web-prototype/src/lib/calculations.ts#L40-L82)
-- [scpwd_user_stories.md:33-109](file://scpwd_user_stories.md#L33-L109)
+- [modern-ui.css:550-560](file://assets/css/modern-ui.css#L550-L560)
+- [pos.js:267-282](file://assets/js/pos.js#L267-L282)
+- [pos-prototype.tsx:404-440](file://web-prototype/src/components/pos-prototype.tsx#L404-L440)
 
-## Controlled Drug Management
-Controlled drug management includes comprehensive classification system, dispensing checkpoints, and pharmacist acknowledgment requirements.
+## Improved Confirmation Dialogs
+Confirmation dialogs for critical operations have been enhanced with better visual design, clearer messaging, and improved user feedback mechanisms.
 
-```mermaid
-flowchart TD
-ControlledDrugs["Controlled Drugs"] --> Classification["Drug Classification"]
-Classification --> DD["DD, Rx"]
-Classification --> EDD["EDD, Rx"]
-Classification --> Rx["Rx"]
-Classification --> POTC["Pharmacist-Only OTC"]
-Classification --> OTC["Non-Rx OTC"]
-DD --> Checkpoints["Dispensing Checkpoints"]
-EDD --> Checkpoints
-Rx --> Checkpoints
-POTC --> Checkpoints
-Checkpoints --> Validation["Validation Gates"]
-Checkpoints --> Warning["Dispensing Warnings"]
-Checkpoints --> Block["Dispensing Blocks"]
-Validation --> PharmacistAck["Pharmacist Acknowledgment"]
-Warning --> YellowForm["Yellow Rx Form Required"]
-Warning --> S2License["S-2 License Required"]
-Block --> PrescriptionRequired["Prescription Required"]
-```
-
-**Diagram sources**
-- [types.ts:12-13](file://web-prototype/src/lib/types.ts#L12-L13)
-- [rx-workspace.tsx:59-88](file://web-prototype/src/components/rx-workspace.tsx#L59-L88)
-- [dd-stock-reconciliation.tsx:12-15](file://web-prototype/src/components/dd-stock-reconciliation.tsx#L12-L15)
+**Updated** The confirmation system now provides more intuitive user experience with better visual hierarchy and consistent styling. The dialogs use the modern UI framework's design tokens and provide immediate visual feedback through the Notiflix library integration.
 
 **Section sources**
-- [types.ts:12-13](file://web-prototype/src/lib/types.ts#L12-L13)
-- [rx-workspace.tsx:59-88](file://web-prototype/src/components/rx-workspace.tsx#L59-L88)
-- [dd-stock-reconciliation.tsx:1-50](file://web-prototype/src/components/dd-stock-reconciliation.tsx#L1-L50)
-- [rxdd_user_stories.md:102-111](file://rxdd_user_stories.md#L102-L111)
+- [pos.js:666-700](file://assets/js/pos.js#L666-L700)
+- [pos.js:1151-1200](file://assets/js/pos.js#L1151-L1200)
+- [modern-ui.css:562-578](file://assets/css/modern-ui.css#L562-L578)
 
-## Enhanced Product Categorization
-Product categorization now includes comprehensive drug classification badges for controlled substance identification.
+## Refined Product Management Workflow
+Product management workflow has been refined with consolidated actions, improved categorization, and streamlined navigation that reduces the number of steps required to complete common tasks.
 
-```mermaid
-flowchart TD
-Product["Product"] --> Badge["Classification Badge"]
-Badge --> DD["DD Badge"]
-Badge --> EDD["EDD Badge"]
-Badge --> Rx["Rx Badge"]
-Badge --> POTC["Pharmacist-Only OTC Badge"]
-Badge --> OTC["OTC Badge"]
-DD --> Color["Red Background"]
-EDD --> Color
-Rx --> Color
-POTC --> Color
-OTC --> Color
-Color --> Text["White Text"]
-Text --> Size["Bold Font"]
-Size --> Position["Top-Right Corner"]
-Position --> Tooltip["Classification Tooltip"]
-```
-
-**Diagram sources**
-- [pos-prototype.tsx:41-47](file://web-prototype/src/components/pos-prototype.tsx#L41-L47)
-- [types.ts:12-13](file://web-prototype/src/lib/types.ts#L12-L13)
+**Updated** The product management system now features a more intuitive workflow with simplified navigation and consolidated action buttons. The unified product editor provides a seamless experience for creating, editing, and deleting products with improved confirmation flows.
 
 **Section sources**
-- [pos-prototype.tsx:41-47](file://web-prototype/src/components/pos-prototype.tsx#L41-L47)
-- [types.ts:12-13](file://web-prototype/src/lib/types.ts#L12-L13)
+- [pos.js:278-365](file://assets/js/pos.js#L278-L365)
+- [modern-ui.css:380-418](file://assets/css/modern-ui.css#L380-L418)
+- [pos-prototype.tsx:294-322](file://web-prototype/src/components/pos-prototype.tsx#L294-L322)
 
-## Improved Expiration Date Tracking
-Enhanced expiration date tracking includes advanced alert systems and product lifecycle management.
+## Modern UI Styling
+The modern UI framework provides a consistent design language with improved typography, spacing, and visual hierarchy that enhances readability and user experience across all screen sizes.
 
-```mermaid
-flowchart TD
-Expiration["Expiration Tracking"] --> Alert["Expiry Alerts"]
-Alert --> NearExpiry["Near Expiry (30 days)"]
-Alert --> Expired["Expired Products"]
-Alert --> Critical["Critical Expiry"]
-NearExpiry --> Notification["Notification Center"]
-Expired --> Warning["Warning Banner"]
-Critical --> Block["Block Sales"]
-Block --> ManualOverride["Manual Override"]
-ManualOverride --> SupervisorAuth["Supervisor Authorization"]
-SupervisorAuth --> Proceed["Proceed with Override"]
-SupervisorAuth --> Deny["Deny Override"]
-Deny --> Block
-Proceed --> Continue["Continue with Transaction"]
-```
-
-**Diagram sources**
-- [utils.js:12-26](file://assets/js/utils.js#L12-L26)
-- [pos.js:289-317](file://assets/js/pos.js#L289-L317)
-- [calculations.ts:169-187](file://web-prototype/src/lib/calculations.ts#L169-L187)
+**Updated** The styling system has been completely redesigned with a more modern aesthetic, improved responsive behavior, and enhanced accessibility features. The CSS custom properties provide better theming capabilities and consistent design tokens across the interface.
 
 **Section sources**
-- [utils.js:12-26](file://assets/js/utils.js#L12-L26)
-- [pos.js:289-317](file://assets/js/pos.js#L289-L317)
-- [calculations.ts:169-187](file://web-prototype/src/lib/calculations.ts#L169-L187)
+- [modern-ui.css:1-739](file://assets/css/modern-ui.css#L1-L739)
+- [responsive.css:1-158](file://assets/css/responsive.css#L1-L158)
+
+## Responsive Design Enhancements
+Responsive design has been significantly enhanced with improved mobile support, better tablet layouts, and adaptive components that provide optimal user experience across all device types.
+
+**Updated** The responsive system now provides better mobile experience with improved touch targets, optimized layouts, and enhanced navigation patterns. The grid-based layout system adapts seamlessly to different screen sizes while maintaining usability standards.
+
+**Section sources**
+- [responsive.css:18-739](file://assets/css/responsive.css#L18-L739)
+- [modern-ui.css:643-739](file://assets/css/modern-ui.css#L643-L739)
 
 ## Enhanced Receipt Preview
-The receipt preview system now displays SC/PWD discount information and controlled drug compliance details.
+The receipt preview system now displays SC/PWD discount information and controlled drug compliance details with improved formatting and visual presentation.
 
-```mermaid
-flowchart TD
-Receipt["Receipt Preview"] --> Header["Store Header"]
-Header --> ORInfo["OR Information"]
-ORInfo --> Items["Line Items"]
-Items --> Breakdown["Tax Breakdown"]
-Breakdown --> SCPWDSec["SC/PWD Section"]
-SCPWDSec --> DiscountInfo["Discount Information"]
-DiscountInfo --> ProxyInfo["Proxy Purchase Info"]
-ProxyInfo --> Compliance["Compliance Information"]
-Compliance --> Footer["Footer"]
-Footer --> Void["Void Watermark"]
-Footer --> Reprint["Reprint Header"]
-```
-
-**Diagram sources**
-- [receipt-preview.tsx:23-191](file://web-prototype/src/components/receipt-preview.tsx#L23-L191)
-- [types.ts:243-260](file://web-prototype/src/lib/types.ts#L243-L260)
+**Updated** The receipt preview has been enhanced with better SC/PWD discount display, improved compliance formatting, and more professional appearance. The receipt templates now include comprehensive discount breakdowns and compliance indicators.
 
 **Section sources**
 - [receipt-preview.tsx:1-191](file://web-prototype/src/components/receipt-preview.tsx#L1-L191)
 - [types.ts:243-260](file://web-prototype/src/lib/types.ts#L243-L260)
 
 ## Dependency Analysis
-The enhanced POS system maintains its modular architecture while adding specialized dependencies for pharmaceutical workflow management.
+The enhanced POS system maintains its modular architecture while adding specialized dependencies for pharmaceutical workflow management and modern UI components.
 
 ```mermaid
 graph LR
-POS["pos.js"] --> Utils["utils.js"]
+POS["pos.js"] --> ModernUI["modern-ui.css"]
+POS --> Utils["utils.js"]
 POS --> Checkout["checkout.js"]
 POS --> InventoryAPI["api/inventory.js"]
 POS --> TransactionsAPI["api/transactions.js"]
 POS --> HTML["index.html"]
-Checkout --> Utils
-InventoryAPI --> Utils
+Checkout --> ModernUI
+ModernUI --> Responsive["responsive.css"]
 PosProto["pos-prototype.tsx"] --> RxWorkspace["rx-workspace.tsx"]
 PosProto --> ScPwdModal["scpwd-discount-modal.tsx"]
 PosProto --> ReceiptPreview["receipt-preview.tsx"]
+PosProto --> UsePosStore["use-pos-store.ts"]
 RxWorkspace --> Calculations["calculations.ts"]
 ScPwdModal --> Types["types.ts"]
 ReceiptPreview --> Types
 PosProto --> Types
 RxWorkspace --> Types
+UsePosStore --> Types
 ```
 
 **Diagram sources**
 - [pos.js:86-94](file://assets/js/pos.js#L86-L94)
+- [modern-ui.css:1-18](file://assets/css/modern-ui.css#L1-L18)
 - [checkout.js:1-2](file://assets/js/checkout.js#L1-L2)
-- [inventory.js:1-44](file://api/inventory.js#L1-L44)
-- [transactions.js:1-24](file://api/transactions.js#L1-L24)
+- [responsive.css:1-158](file://assets/css/responsive.css#L1-L158)
 - [pos-prototype.tsx:1-22](file://web-prototype/src/components/pos-prototype.tsx#L1-L22)
 - [rx-workspace.tsx:1-23](file://web-prototype/src/components/rx-workspace.tsx#L1-L23)
 - [scpwd-discount-modal.tsx:1-4](file://web-prototype/src/components/scpwd-discount-modal.tsx#L1-L4)
 - [receipt-preview.tsx:1-3](file://web-prototype/src/components/receipt-preview.tsx#L1-L3)
-- [calculations.ts:1](file://web-prototype/src/lib/calculations.ts#L1)
+- [use-pos-store.ts:1-671](file://web-prototype/src/lib/use-pos-store.ts#L1-L671)
 - [types.ts:1](file://web-prototype/src/lib/types.ts#L1)
 
 **Section sources**
 - [pos.js:86-94](file://assets/js/pos.js#L86-L94)
+- [modern-ui.css:1-18](file://assets/css/modern-ui.css#L1-L18)
 - [checkout.js:1-2](file://assets/js/checkout.js#L1-L2)
-- [inventory.js:1-44](file://api/inventory.js#L1-L44)
-- [transactions.js:1-24](file://api/transactions.js#L1-L24)
+- [responsive.css:1-158](file://assets/css/responsive.css#L1-L158)
 - [pos-prototype.tsx:1-22](file://web-prototype/src/components/pos-prototype.tsx#L1-L22)
 
 ## Performance Considerations
-The enhanced POS system maintains performance through efficient DOM updates, debounced UI updates, and specialized optimization for pharmaceutical workflows.
+The enhanced POS system maintains performance through efficient DOM updates, debounced UI updates, and specialized optimization for pharmaceutical workflows with improved resource management.
 
-- **Efficient DOM updates**: Cart rendering uses incremental updates to minimize reflows
-- **Debounced UI updates**: Category filtering and search use lightweight event handlers
-- **Specialized RX workspace**: Optimized rendering for controlled drug management
-- **SC/PWD discount caching**: Discount calculations cached per transaction
-- **Controlled drug validation**: Pre-computed dispensing checkpoints for fast access
-- **Enhanced receipt generation**: Optimized HTML generation with SC/PWD discount display
-- **Local storage caching**: Authentication, settings, and RX workspace state cached locally
+- **Efficient DOM updates**: Cart rendering uses incremental updates to minimize reflows with enhanced styling
+- **Debounced UI updates**: Category filtering and search use lightweight event handlers with improved responsiveness
+- **Modern UI optimization**: CSS Grid and Flexbox layouts provide better performance than traditional floats
+- **Enhanced responsive behavior**: Media queries optimized for modern devices with improved mobile performance
+- **Streamlined action handling**: Simplified button logic reduces JavaScript overhead while maintaining functionality
+- **Improved keyboard input**: Optimized keypad handling with better event delegation and reduced memory usage
 
 ## Troubleshooting Guide
-Enhanced troubleshooting for specialized pharmaceutical workflows:
+Enhanced troubleshooting for specialized pharmaceutical workflows and modern UI components:
 
-**RX Workspace Issues**
-- Controlled drug validation failures: Verify drug classification and pharmacist acknowledgment requirements
-- Prescription entry errors: Check prescriber license validity and S-2 requirements
-- Dispensing checkpoint violations: Review controlled drug regulations and pharmacist authorization
+**Modern UI Issues**
+- Button styling problems: Verify modern-ui.css is loaded and CSS variables are properly defined
+- Responsive layout issues: Check media query breakpoints and viewport meta tag configuration
+- Touch target sizing: Ensure buttons meet minimum 44px touch target size requirements
 
-**SC/PWD Discount Issues**
-- Eligibility validation failures: Verify ID number format and customer information
-- Double discount errors: Ensure no existing manual discounts on eligible items
-- VAT exemption errors: Check VAT registration status and item eligibility
-- Proxy purchase validation: Verify proxy relationship and identification documents
+**Streamlined Action Button Issues**
+- Button click handling: Verify event delegation works with dynamically loaded content
+- Visual feedback problems: Check CSS hover and active states are properly applied
+- Accessibility concerns: Ensure proper ARIA attributes and keyboard navigation support
 
-**Controlled Drug Management**
-- Dispensing block errors: Confirm prescription requirements and pharmacist acknowledgment
-- Yellow Rx form requirements: Verify prescriber license and S-2 certification
-- Stock reconciliation alerts: Check DD/EDD inventory thresholds and last reconciliation dates
+**Enhanced Confirmation Dialog Issues**
+- Dialog positioning: Verify modal backdrop and container positioning with responsive design
+- User feedback problems: Check notification system integration and visual hierarchy
+- Cross-browser compatibility: Test dialog behavior across different browser versions
 
 **Section sources**
-- [rx-workspace.tsx:59-88](file://web-prototype/src/components/rx-workspace.tsx#L59-L88)
-- [scpwd-discount-modal.tsx:29-42](file://web-prototype/src/components/scpwd-discount-modal.tsx#L29-L42)
-- [dd-stock-reconciliation.tsx:12-15](file://web-prototype/src/components/dd-stock-reconciliation.tsx#L12-L15)
+- [modern-ui.css:1-739](file://assets/css/modern-ui.css#L1-L739)
+- [pos.js:666-700](file://assets/js/pos.js#L666-L700)
+- [responsive.css:18-739](file://assets/css/responsive.css#L18-L739)
 
 ## Conclusion
-The enhanced PharmaSpot POS interface provides a comprehensive, compliant retail solution with integrated pharmaceutical workflow management. The addition of RX workspace integration, SC/PWD discount application, controlled drug management, and improved expiration date tracking creates a unified platform capable of handling both traditional retail operations and specialized pharmaceutical requirements. The modular architecture ensures maintainability while the enhanced user experience supports complex regulatory compliance scenarios.
+The enhanced PharmaSpot POS interface provides a comprehensive, compliant retail solution with integrated pharmaceutical workflow management and a modernized user experience. The addition of simplified action buttons, improved confirmation dialogs, refined product management workflow, and enhanced UI components creates a streamlined platform capable of handling both traditional retail operations and specialized pharmaceutical requirements. The modern UI framework ensures maintainability while the enhanced user experience supports complex regulatory compliance scenarios with improved efficiency and reduced cognitive load. The responsive design enhancements provide optimal user experience across all device types, making the system accessible and efficient for various operational environments.

@@ -16,16 +16,18 @@
     "ci:gates": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:contract && npm run security:scan"
   },
   "dependencies": {
+    "@libsql/client": "latest",
+    "bcryptjs": "latest",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"
   },
   "devDependencies": {
     "@testing-library/react": "latest",
+    "@types/bcryptjs": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "fake-indexeddb": "latest",
     "jsdom": "^29.0.2",
     "typescript": "latest",
     "vitest": "latest"

@@ -1,59 +1,109 @@
 "use client";
-import { useState } from "react";
-import type { XReading } from "@/lib/types";
+import { useState, useEffect, useCallback } from "react";
+import { getAll, putOne } from "../lib/db";
+import { getOne } from "../lib/db";
+import { logAuditEvent } from "./audit-trail";
+import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
+import type { Transaction, XReading, BirSettings, PrinterProfile } from "@/lib/types";
 
-const fmt = (n: number) => `₱${n.toFixed(2)}`;
+const fmt = (n: number) => `\u20b1${n.toFixed(2)}`;
 
-const mockXReading: XReading = {
-  id: "xr-001",
-  reportDate: "2026-04-25",
-  reportTime: "14:30:00",
-  machineSerial: "SN-2024-001",
-  beginningOrNumber: 49800,
-  lastOrNumber: 49920,
-  grossSales: 125750.0,
-  vatableSales: 112276.79,
-  vatExemptSales: 8500.0,
-  vatAmount: 13473.21,
-  zeroRatedSales: 0,
-  scDiscount: 2500.0,
-  pwdDiscount: 1200.0,
-  promotionalDiscount: 800.0,
-  totalDiscounts: 4500.0,
-  totalVoids: 3,
-  voidAmount: 1250.0,
-  totalReturns: 1,
-  returnAmount: 450.0,
-  netSales: 119550.0,
-  generatedBy: "Maria Santos",
-  generatedAt: "2026-04-25T14:30:00",
-};
+function computeXReading(transactions: Transaction[]): Omit<XReading, "id"> {
+  const grossSales = transactions.reduce((sum, t) => sum + t.subtotal, 0);
+  const scDiscount = transactions.reduce((sum, t) => sum + (t.scPwdMetadata?.scPwdDiscountAmount ?? 0), 0);
+  const voids = transactions.filter((t) => t.paymentStatus === "refunded");
+  const totalVoids = voids.length;
+  const voidAmount = voids.reduce((sum, t) => sum + t.total, 0);
+  const totalDiscounts = transactions.reduce((sum, t) => sum + t.discount, 0);
+  const vatAmount = transactions.reduce((sum, t) => sum + t.tax, 0);
+  const netSales = grossSales - totalDiscounts - voidAmount;
+  const first = transactions[transactions.length - 1];
+  const last = transactions[0];
+  const now = new Date();
+  return {
+    reportDate: now.toISOString().slice(0, 10),
+    reportTime: now.toISOString().slice(11, 19),
+    machineSerial: "",
+    beginningOrNumber: first ? Number(first.localNumber) : 0,
+    lastOrNumber: last ? Number(last.localNumber) : 0,
+    grossSales,
+    vatableSales: grossSales - vatAmount,
+    vatExemptSales: 0,
+    vatAmount,
+    zeroRatedSales: 0,
+    scDiscount,
+    pwdDiscount: 0,
+    promotionalDiscount: totalDiscounts - scDiscount,
+    totalDiscounts,
+    totalVoids,
+    voidAmount,
+    totalReturns: 0,
+    returnAmount: 0,
+    netSales,
+    generatedBy: "Current User",
+    generatedAt: now.toISOString(),
+  };
+}
 
 export function XReadingReport() {
-  const [generated, setGenerated] = useState(false);
-  const r = mockXReading;
+  const [generated, setGenerated] = useState<XReading | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [reading, setReading] = useState<Omit<XReading, "id"> | null>(null);
+  const [printStatus, setPrintStatus] = useState<string | null>(null);
+
+  const loadAndCompute = useCallback(async () => {
+    const [txs, birRaw] = await Promise.all([
+      getAll("transactions") as Promise<Transaction[]>,
+      getOne("birSettings", "bir"),
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    const todayTxs = txs
+      .filter((t) => t.createdAt.startsWith(today))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const bir = birRaw as BirSettings | undefined;
+    const computed = computeXReading(todayTxs);
+    if (bir) computed.machineSerial = bir.machineSerial;
+    setReading(computed);
+  }, []);
+
+  useEffect(() => {
+    loadAndCompute();
+  }, [loadAndCompute]);
+
+  async function handleGenerate() {
+    if (!reading) return;
+    setGenerating(true);
+    try {
+      const report: XReading = { ...reading, id: crypto.randomUUID() };
+      await putOne("xReadings", report);
+      await logAuditEvent("x-reading", "Current User", `X-Reading generated for ${reading.reportDate}`);
+      setGenerated(report);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const r = generated ?? reading;
 
   return (
     <div>
       <div className="report-actions">
         <button
           className="primary report-generate-btn"
-          onClick={() => setGenerated(true)}
-          disabled={generated}
+          onClick={handleGenerate}
+          disabled={generating || !reading}
         >
-          {generated ? "✓ X-Reading Generated" : "Generate X-Reading"}
+          {generating ? "Generating..." : generated ? "\u2713 X-Reading Generated" : "Generate X-Reading"}
         </button>
         <span className="report-permission-note">(Cashier and above)</span>
       </div>
 
-      {generated && (
+      {r && (
         <div className="bir-report-card">
           <div className="bir-report-header">
             <h2>X-READING REPORT</h2>
-            <p>
-              Date: {r.reportDate} &nbsp;|&nbsp; Time: {r.reportTime}
-            </p>
-            <p>Machine S/N: {r.machineSerial}</p>
+            <p>Date: {r.reportDate} &nbsp;|&nbsp; Time: {r.reportTime}</p>
+            <p>Machine S/N: {r.machineSerial || "Not configured"}</p>
           </div>
 
           <div className="bir-report-section">
@@ -77,12 +127,12 @@ export function XReadingReport() {
               <span className="value">{fmt(r.vatableSales)}</span>
             </div>
             <div className="bir-report-row">
-              <span className="label">VAT-Exempt Sales</span>
-              <span className="value">{fmt(r.vatExemptSales)}</span>
-            </div>
-            <div className="bir-report-row">
               <span className="label">VAT Amount</span>
               <span className="value">{fmt(r.vatAmount)}</span>
+            </div>
+            <div className="bir-report-row">
+              <span className="label">VAT-Exempt Sales</span>
+              <span className="value">{fmt(r.vatExemptSales)}</span>
             </div>
             <div className="bir-report-row">
               <span className="label">Zero-Rated Sales</span>
@@ -137,7 +187,37 @@ export function XReadingReport() {
           </div>
 
           <div className="report-actions" style={{ marginTop: 16 }}>
-            <button className="primary">🖨️ Print X-Reading</button>
+            <button
+              className="primary"
+              onClick={async () => {
+                if (!r) return;
+                setPrintStatus("Connecting…");
+                const profiles = (await getAll("printerProfiles")) as PrinterProfile[];
+                const printer = profiles.find((p) => p.role === "report" || p.role === "both");
+                if (!printer) {
+                  setPrintStatus("No report printer configured");
+                  return;
+                }
+                const service = new PrinterService(createPrinterBackend);
+                const connectResult = await service.connect(printer);
+                if (connectResult.status !== "success") {
+                  setPrintStatus(`Failed: ${connectResult.status}`);
+                  await service.disconnect();
+                  return;
+                }
+                const commands = buildReceipt("x-reading", printer, undefined, r as XReading);
+                const result = await service.print(commands);
+                await service.disconnect();
+                setPrintStatus(result.status === "success" ? "Printed" : `Failed: ${result.status}`);
+              }}
+            >
+              Print X-Reading
+            </button>
+            {printStatus && (
+              <span style={{ fontSize: 12, marginLeft: 8, color: printStatus.startsWith("Failed") ? "var(--danger)" : "var(--success)" }}>
+                {printStatus}
+              </span>
+            )}
           </div>
         </div>
       )}

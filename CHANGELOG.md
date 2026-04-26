@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-04-26 - Phase 1 Backend Wiring Savepoint
+
+### Added
+- 8 new IndexedDB stores: birSettings, printerProfiles, auditLog, printerActivity, prescriptions, rxSettings, xReadings, zReadings (agent: qoder)
+- DB schema v4 migration for Phase 1 new stores (agent: qoder)
+- `logAuditEvent()` and `logPrinterActivity()` exported helpers in audit-trail.tsx for cross-component audit logging (agent: qoder)
+- 12 unit tests for OR series logic and X-Reading computation in `db.test.ts` (agent: qoder)
+
+### Changed
+- BIR settings panel now loads/saves to IndexedDB instead of useState mock data (agent: qoder)
+- Printer profiles management (add/delete/test-print) now persists to IndexedDB (agent: qoder)
+- Audit trail panel loads real entries from auditLog and printerActivity IndexedDB stores (agent: qoder)
+- X-Reading and Z-Reading reports now compute from real transaction data via IndexedDB (agent: qoder)
+- Prescription settings panel loads/saves to IndexedDB rxSettings store (agent: qoder)
+- Prescription drafts, refusals, and red flags now persist to IndexedDB via use-pos-store (agent: qoder)
+- `completeSale` now reads BIR settings for OR series tracking, auto-increments OR number, and blocks when series exhausted (agent: qoder)
+- Generated X/Z readings persisted to their respective IndexedDB stores with audit trail entries (agent: qoder)
+
+## 2026-04-26 - Savepoint
+
+### Added
+- Experimental Phase 2 backend spike: SQLite backend with @libsql/client, Turso cloud database, and Next.js API routes (agent: qoder)
+- Payment processing API: `POST /api/payments/process` for marking transactions as paid with payment method/reference (agent: qoder)
+- Refund handling API: `POST /api/payments/refund` for processing refunds with reason/reference tracking (agent: qoder)
+- Sync queue worker: `GET/POST /api/sync/process` for offline sync queue management with retry logic (agent: qoder)
+- Feature flag controls: `GET/PATCH /api/feature-flags` for kill-switch rollout of payments/refunds/sync (agent: qoder)
+- Server-side database layer: `src/lib/server/db.ts`, `init.ts`, `seed.ts`, `schema.sql` with singleton pattern and test override support (agent: qoder)
+- 24 API routes total covering products, categories, customers, users, transactions, held orders, settings, sync queue (agent: qoder)
+
+### Changed
+- Added an experimental server-backed path for future migration work; the main `web-prototype/` runtime remains IndexedDB-first (agent: qoder)
+- Introduced `web-prototype/src/lib/api-client.ts` as an experimental bridge instead of the default POS data path (agent: codex)
+- Left `TURSO_URL` and `TURSO_AUTH_TOKEN` as optional experimental environment variables for the server-backed spike (agent: codex)
+
+### Fixed
+- Test file corruption from base64 encoding: restored `db.test.ts`, `auth.test.ts`, `sync.contract.test.ts`, `db.integration.test.ts`, `migrations.integration.test.ts` (agent: qoder)
+- Restored `getDb(overrideUrl?)` parameter for in-memory test database isolation (agent: qoder)
+- Fixed SQL nested quote bug in payment processing route (agent: qoder)
+
+## 2026-04-26 - Savepoint
+
+### Changed
+- Re-centered `web-prototype/` on the IndexedDB data layer for boot, login, core POS mutations, sync queue usage, and printer flows (agent: codex)
+- Guarded printer status polling so jsdom and non-browser environments do not touch IndexedDB or emit unhandled runtime errors (agent: codex)
+- Clarified product and technical docs so the experimental Next.js API/libSQL work is documented as non-default reference work (agent: codex)
+
 ## 2026-04-25 - Savepoint
 
 ### Added

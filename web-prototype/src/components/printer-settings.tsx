@@ -1,37 +1,23 @@
 "use client";
 
 import { useState, FormEvent, useEffect } from "react";
-import type { PrinterProfile, PrinterConnectionType, PrinterRole } from "@/lib/types";
+import { getAll, putOne, deleteOne } from "../lib/db";
+import type { PrinterProfile, PrinterConnectionType, PrinterRole, PrinterActivityLog } from "@/lib/types";
+import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
+import { logPrinterActivity } from "./audit-trail";
 
 export function PrinterSettingsPanel() {
-  const [printers, setPrinters] = useState<PrinterProfile[]>([
-    {
-      id: "1",
-      label: "Counter 1 Printer",
-      connectionType: "usb",
-      address: "/dev/usb/lp0",
-      paperWidth: 80,
-      characterSet: "UTF-8",
-      autocut: true,
-      partialCut: false,
-      role: "both",
-      isDefault: true,
-      status: "online",
-    },
-    {
-      id: "2",
-      label: "Report Printer",
-      connectionType: "lan",
-      address: "192.168.1.100",
-      paperWidth: 80,
-      characterSet: "UTF-8",
-      autocut: true,
-      partialCut: true,
-      role: "report",
-      isDefault: false,
-      status: "offline",
-    },
-  ]);
+  const [printers, setPrinters] = useState<PrinterProfile[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      const saved = await getAll("printerProfiles") as PrinterProfile[];
+      setPrinters(saved);
+      setLoaded(true);
+    }
+    load();
+  }, []);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -40,6 +26,8 @@ export function PrinterSettingsPanel() {
   const [newPaperWidth, setNewPaperWidth] = useState<58 | 80>(80);
   const [newCharSet, setNewCharSet] = useState("UTF-8");
   const [newRole, setNewRole] = useState<PrinterRole>("both");
+  const [newBaudRate, setNewBaudRate] = useState(9600);
+  const [newBridgeUrl, setNewBridgeUrl] = useState("http://localhost:9101");
 
   // Receipt Layout state
   const [headerLines, setHeaderLines] = useState("");
@@ -55,6 +43,10 @@ export function PrinterSettingsPanel() {
   // Scanning state
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
+
+  // Browser capability warnings
+  const serialAvailable = typeof navigator !== "undefined" && "serial" in navigator;
+  const bluetoothAvailable = typeof navigator !== "undefined" && "bluetooth" in navigator;
 
   useEffect(() => {
     if (toast) {
@@ -76,10 +68,10 @@ export function PrinterSettingsPanel() {
     return "Error";
   }
 
-  function handleAddPrinter(e: FormEvent<HTMLFormElement>) {
+  async function handleAddPrinter(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const newPrinter: PrinterProfile = {
-      id: String(Date.now()),
+      id: crypto.randomUUID(),
       label: newLabel,
       connectionType: newConnection,
       address: newAddress,
@@ -90,52 +82,169 @@ export function PrinterSettingsPanel() {
       role: newRole,
       isDefault: false,
       status: "offline",
+      baudRate: newConnection === "usb" ? newBaudRate : undefined,
+      bridgeUrl: newConnection === "lan" ? newBridgeUrl : undefined,
     };
+    await putOne("printerProfiles", newPrinter);
     setPrinters((prev) => [...prev, newPrinter]);
     setNewLabel("");
     setNewAddress("");
+    setNewBaudRate(9600);
+    setNewBridgeUrl("http://localhost:9101");
     setShowAddForm(false);
   }
 
-  function deletePrinter(id: string) {
+  async function deletePrinter(id: string) {
+    await deleteOne("printerProfiles", id);
     setPrinters((prev) => prev.filter((p) => p.id !== id));
   }
 
-  function testPrint() {
-    setToast("Test print sent");
+  async function testPrint(printer: PrinterProfile) {
+    setToast(`Connecting to ${printer.label}…`);
+    const service = new PrinterService(createPrinterBackend);
+    const connectResult = await service.connect(printer);
+    if (connectResult.status !== "success") {
+      setToast(`Connection failed: ${connectResult.status}`);
+      await logPrinterActivity({
+        jobType: "receipt",
+        timestamp: new Date().toISOString(),
+        printerUsed: printer.label,
+        status: "failed",
+        failureReason: connectResult.status,
+      });
+      return;
+    }
+
+    const sample = buildReceipt("normal", printer, undefined, null, {
+      headerLines: headerLines ? headerLines.split("\n") : undefined,
+      footerLines: footerLines ? footerLines.split("\n") : undefined,
+    });
+    const printResult = await service.print(sample);
+    await service.disconnect();
+
+    if (printResult.status === "success") {
+      setToast("Test print sent successfully");
+    } else {
+      setToast(`Print failed: ${printResult.status}`);
+    }
+
+    await logPrinterActivity({
+      jobType: "receipt",
+      timestamp: new Date().toISOString(),
+      printerUsed: printer.label,
+      status: printResult.status === "success" ? "success" : "failed",
+      failureReason: "reason" in printResult ? printResult.reason : undefined,
+    });
+
+    // Update profile status in state
+    setPrinters((prev) =>
+      prev.map((p) =>
+        p.id === printer.id
+          ? { ...p, status: printResult.status === "success" ? "online" as const : "offline" as const }
+          : p
+      )
+    );
+    await putOne("printerProfiles", { ...printer, status: printResult.status === "success" ? "online" : "offline" });
   }
 
-  function autoDetectUsb() {
+  async function autoDetectUsb() {
+    if (!serialAvailable) {
+      setScanResult("Web Serial API is not available in this browser. Use Chrome or Edge on HTTPS/localhost.");
+      return;
+    }
     setScanning(true);
     setScanResult(null);
-    setTimeout(() => {
-      setScanning(false);
-      // 50% chance of finding a mock printer
-      if (Math.random() > 0.5) {
-        const mock: PrinterProfile = {
-          id: String(Date.now()),
-          label: "USB Printer (Auto-detected)",
-          connectionType: "usb",
-          address: "/dev/usb/lp1",
-          paperWidth: 80,
-          characterSet: "UTF-8",
-          autocut: true,
-          partialCut: false,
-          role: "both",
-          isDefault: false,
-          status: "online",
-        };
-        setPrinters((prev) => [...prev, mock]);
-        setScanResult("Found 1 new printer and added it to the list.");
+    try {
+      // @ts-expect-error navigator.serial is experimental
+      const port = await navigator.serial.requestPort();
+      // @ts-expect-error getInfo is experimental
+      const info = port.getInfo ? port.getInfo() : {};
+      const detected: PrinterProfile = {
+        id: crypto.randomUUID(),
+        label: `USB Printer (${info.usbVendorId?.toString(16) ?? "unknown"})`,
+        connectionType: "usb",
+        address: "USB Serial",
+        paperWidth: 80,
+        characterSet: "UTF-8",
+        autocut: true,
+        partialCut: false,
+        role: "both",
+        isDefault: false,
+        status: "offline",
+        baudRate: 9600,
+        portInfo: {
+          vendorId: info.usbVendorId,
+          productId: info.usbProductId,
+        },
+      };
+      await putOne("printerProfiles", detected);
+      setPrinters((prev) => [...prev, detected]);
+      setScanResult("Found 1 new USB printer and added it to the list.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("No port selected") || msg.includes("NotFoundError")) {
+        setScanResult("No new printers found.");
       } else {
-        setScanResult("No new printers found");
+        setScanResult(`Error: ${msg}`);
       }
-    }, 2000);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function pairBluetoothPrinter() {
+    if (!bluetoothAvailable) {
+      setScanResult("Web Bluetooth API is not available in this browser. Use Chrome or Edge on HTTPS/localhost.");
+      return;
+    }
+    setScanning(true);
+    setScanResult(null);
+    try {
+      // @ts-expect-error navigator.bluetooth is experimental
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
+        optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb", "00001101-0000-1000-8000-00805f9b34fb"],
+      });
+      const detected: PrinterProfile = {
+        id: crypto.randomUUID(),
+        label: `Bluetooth Printer (${(device as unknown as { name?: string }).name ?? "unknown"})`,
+        connectionType: "bluetooth",
+        address: device.id,
+        paperWidth: 80,
+        characterSet: "UTF-8",
+        autocut: true,
+        partialCut: false,
+        role: "both",
+        isDefault: false,
+        status: "offline",
+        deviceId: device.id,
+      };
+      await putOne("printerProfiles", detected);
+      setPrinters((prev) => [...prev, detected]);
+      setScanResult("Paired Bluetooth printer and added it to the list.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("NotFoundError") || msg.includes("User cancelled")) {
+        setScanResult("No Bluetooth printer selected.");
+      } else {
+        setScanResult(`Error: ${msg}`);
+      }
+    } finally {
+      setScanning(false);
+    }
   }
 
   return (
     <section className="panel settings-panel">
       <h2>Printer Settings</h2>
+
+      {/* Browser capability warnings */}
+      {(!serialAvailable || !bluetoothAvailable) && (
+        <div style={{ background: "#fff3cd", color: "#664d03", padding: "8px 12px", borderRadius: "4px", fontSize: "13px", marginBottom: "12px" }}>
+          {!serialAvailable && <div>Web Serial API unavailable — USB printer auto-detect will not work. Use Chrome/Edge on HTTPS/localhost.</div>}
+          {!bluetoothAvailable && <div>Web Bluetooth API unavailable — Bluetooth printer pairing will not work. Use Chrome/Edge on HTTPS/localhost.</div>}
+        </div>
+      )}
 
       {/* Action buttons */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
@@ -143,7 +252,10 @@ export function PrinterSettingsPanel() {
           {showAddForm ? "Cancel" : "Add Printer"}
         </button>
         <button onClick={autoDetectUsb} disabled={scanning}>
-          🔍 Auto-Detect USB Printers
+          Auto-Detect USB Printers
+        </button>
+        <button onClick={pairBluetoothPrinter} disabled={scanning}>
+          Pair Bluetooth Printer
         </button>
       </div>
 
@@ -209,6 +321,32 @@ export function PrinterSettingsPanel() {
               />
             </label>
 
+            {newConnection === "usb" && (
+              <label className="input-label">
+                Baud Rate
+                <input
+                  type="number"
+                  value={newBaudRate}
+                  onChange={(e) => setNewBaudRate(Number(e.target.value))}
+                  placeholder="9600"
+                  required
+                />
+              </label>
+            )}
+
+            {newConnection === "lan" && (
+              <label className="input-label">
+                Bridge URL
+                <input
+                  type="text"
+                  value={newBridgeUrl}
+                  onChange={(e) => setNewBridgeUrl(e.target.value)}
+                  placeholder="http://localhost:9101"
+                  required
+                />
+              </label>
+            )}
+
             <div className="input-label">
               Paper Width
               <div className="connection-type-selector">
@@ -261,7 +399,14 @@ export function PrinterSettingsPanel() {
           </tr>
         </thead>
         <tbody>
-          {printers.length === 0 && (
+          {!loaded && printers.length === 0 && (
+            <tr>
+              <td colSpan={7} style={{ color: "var(--muted)", textAlign: "center" }}>
+                Loading printers...
+              </td>
+            </tr>
+          )}
+          {loaded && printers.length === 0 && (
             <tr>
               <td colSpan={7} style={{ color: "var(--muted)", textAlign: "center" }}>
                 No printers configured.
@@ -287,9 +432,23 @@ export function PrinterSettingsPanel() {
                 {statusLabel(printer.status)}
               </td>
               <td style={{ display: "flex", gap: "6px" }}>
-                <button className="primary" onClick={testPrint} style={{ fontSize: "12px", padding: "4px 10px" }}>
-                  🖨️ Test Print
+                <button className="primary" onClick={() => testPrint(printer)} style={{ fontSize: "12px", padding: "4px 10px" }}>
+                  Test Print
                 </button>
+                {printer.connectionType === "lan" && (
+                  <button
+                    className="secondary"
+                    onClick={async () => {
+                      const { LanBridgeBackend } = await import("@/lib/printer/lan-bridge-service");
+                      const backend = new LanBridgeBackend();
+                      const res = await backend.connect(printer);
+                      setToast(res.status === "success" ? "Bridge reachable" : `Bridge unreachable: ${res.status}`);
+                    }}
+                    style={{ fontSize: "12px", padding: "4px 10px" }}
+                  >
+                    Test Bridge
+                  </button>
+                )}
                 <button
                   className="danger"
                   onClick={() => deletePrinter(printer.id)}

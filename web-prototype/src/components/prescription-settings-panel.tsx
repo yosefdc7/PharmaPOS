@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { getOne, putOne } from "../lib/db";
 import type { RxSettings } from "@/lib/types";
 
 type Props = {
@@ -8,15 +9,35 @@ type Props = {
   onUpdate: (settings: RxSettings) => void;
 };
 
-export function PrescriptionSettingsPanel({ settings, onUpdate }: Props) {
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    onUpdate({
-      ddEddLowStockThreshold: Number(form.get("ddEddLowStockThreshold") || 10),
-      profileRetentionYears: Number(form.get("profileRetentionYears") || 10),
-      hardBlockPrototypeReset: form.get("hardBlockPrototypeReset") === "on"
+export function PrescriptionSettingsPanel({ settings: initialSettings, onUpdate }: Props) {
+  const [settings, setSettings] = useState<RxSettings>(initialSettings);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getOne("rxSettings", "rx").then((saved) => {
+      if (saved) {
+        setSettings(saved as RxSettings);
+        onUpdate(saved as RxSettings);
+      }
     });
+  }, [onUpdate]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const form = new FormData(event.currentTarget);
+      const updated: RxSettings = {
+        ddEddLowStockThreshold: Number(form.get("ddEddLowStockThreshold") || 10),
+        profileRetentionYears: Number(form.get("profileRetentionYears") || 10),
+        hardBlockPrototypeReset: form.get("hardBlockPrototypeReset") === "on",
+      };
+      await putOne("rxSettings", { ...updated, id: "rx" } as RxSettings & { id: string });
+      setSettings(updated);
+      onUpdate(updated);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -35,7 +56,9 @@ export function PrescriptionSettingsPanel({ settings, onUpdate }: Props) {
           <input name="hardBlockPrototypeReset" type="checkbox" defaultChecked={settings.hardBlockPrototypeReset} /> Hard block reset for prescription and DD logs
         </label>
         <div className="settings-actions">
-          <button className="primary">Save Prescription Settings</button>
+          <button className="primary" type="submit" disabled={saving}>
+            {saving ? "Saving..." : "Save Prescription Settings"}
+          </button>
         </div>
       </form>
     </section>

@@ -37,15 +37,19 @@
 - [web-prototype/docs/rollout-strategy.md](file://web-prototype/docs/rollout-strategy.md)
 - [web-prototype/docs/runbooks/register-outage.md](file://web-prototype/docs/runbooks/register-outage.md)
 - [web-prototype/docs/runbooks/rollback.md](file://web-prototype/docs/runbooks/rollback.md)
+- [assets/css/responsive.css](file://assets/css/responsive.css)
+- [assets/css/core.css](file://assets/css/core.css)
+- [assets/css/components.css](file://assets/css/components.css)
 </cite>
 
 ## Update Summary
 **Changes Made**
-- Enhanced Vercel deployment configuration with multi-step build process using root-level vercel.json
-- Removed redundant outputDirectory specification from Vercel configuration
-- Added comprehensive frontend system pages documentation to repository wiki
-- Streamlined build process with cd web-prototype && npm run build commands
-- Updated Next.js static export configuration with proper framework detection
+- Enhanced POS interface with simplified stock management controls including direct "mark expired" functionality
+- Improved product editor with unified container design and streamlined delete confirmation flow
+- Implemented comprehensive responsive design improvements across mobile and tablet breakpoints
+- Restructured stock adjustment functionality with question mark icon-based interface replacing separate +/- buttons
+- Enhanced settings interface with responsive tab layout for better mobile experience
+- Improved testing infrastructure with vi.spyOn for window.confirm mocking in test suite
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -53,17 +57,19 @@
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [New Pharmaceutical Features](#new-pharmaceutical-features)
-7. [SC/PWD Discount System](#scpwd-discount-system)
-8. [BIR Compliance Framework](#bir-compliance-framework)
-9. [Enhanced Printer Management](#enhanced-printer-management)
-10. [Comprehensive Audit Trail](#comprehensive-audit-trail)
-11. [Deployment Configuration](#deployment-configuration)
-12. [Frontend System Documentation](#frontend-system-documentation)
-13. [Dependency Analysis](#dependency-analysis)
-14. [Performance Considerations](#performance-considerations)
-15. [Troubleshooting Guide](#troubleshooting-guide)
-16. [Conclusion](#conclusion)
+6. [Enhanced POS Interface Improvements](#enhanced-pos-interface-improvements)
+7. [Responsive Design Enhancements](#responsive-design-enhancements)
+8. [New Pharmaceutical Features](#new-pharmaceutical-features)
+9. [SC/PWD Discount System](#scpwd-discount-system)
+10. [BIR Compliance Framework](#bir-compliance-framework)
+11. [Enhanced Printer Management](#enhanced-printer-management)
+12. [Comprehensive Audit Trail](#comprehensive-audit-trail)
+13. [Deployment Configuration](#deployment-configuration)
+14. [Frontend System Documentation](#frontend-system-documentation)
+15. [Dependency Analysis](#dependency-analysis)
+16. [Performance Considerations](#performance-considerations)
+17. [Troubleshooting Guide](#troubleshooting-guide)
+18. [Conclusion](#conclusion)
 
 ## Introduction
 The Next.js Web POS Prototype is a comprehensive point-of-sale system built with React and Next.js, designed specifically for pharmacy environments. This prototype demonstrates a complete offline-first POS solution with real-time synchronization capabilities, inventory management, customer tracking, and advanced reporting features. The system is architected around a modern React pattern using custom hooks for state management and IndexedDB for persistent local storage.
@@ -73,6 +79,10 @@ The Next.js Web POS Prototype is a comprehensive point-of-sale system built with
 **Updated** The deployment configuration has been enhanced with Vercel's multi-step build process, establishing a complete static export pipeline for production deployment. The Next.js configuration has been updated from 'standalone' to 'export' mode, enabling static site generation for optimal performance and scalability. The Vercel configuration now uses streamlined build commands with proper subdirectory handling.
 
 **Updated** Comprehensive frontend system documentation has been added to the repository wiki, including observability guidelines, deployment rollout strategies, and operational runbooks for system maintenance and troubleshooting.
+
+**Updated** Recent enhancements include simplified stock management controls in the POS interface, improved product editor with unified container design, and comprehensive responsive design improvements across mobile and tablet breakpoints. These changes focus on enhancing user experience and operational efficiency in pharmacy environments.
+
+**Updated** The stock management interface has been restructured with a question mark icon-based system that replaces traditional +/- buttons, providing a more streamlined and accessible user experience. The settings interface now features a responsive tab layout that adapts to different screen sizes for better mobile usability.
 
 The prototype showcases key pharmaceutical POS requirements including product expiry tracking, low stock alerts, customer database management, transaction history with filtering capabilities, prescription dispensing enforcement, dangerous drug tracking, and comprehensive compliance reporting. Built with TypeScript for type safety and Vitest for testing, the system provides a robust foundation for enterprise-scale pharmacy management applications.
 
@@ -89,34 +99,37 @@ D[RX Workspace Components]
 E[Compliance Components]
 F[Printer Management]
 G[Audit Trail Components]
+H[Enhanced POS Interface]
+I[Responsive Design System]
+J[Testing Infrastructure]
 end
 subgraph "State Management"
-H[Custom Hooks]
-I[Store Factory]
-J[Feature Flags]
+K[Custom Hooks]
+L[Store Factory]
+M[Feature Flags]
 end
 subgraph "Data Layer"
-K[IndexedDB]
-L[Local Storage]
-M[Seed Data]
+N[IndexedDB]
+O[Local Storage]
+P[Seed Data]
 end
 subgraph "Business Logic"
-N[Calculations]
-O[Observability]
-P[Types]
-Q[Pharmacy Logic]
+Q[Calculations]
+R[Observability]
+S[Types]
+T[Pharmacy Logic]
 end
 subgraph "Documentation Layer"
-R[System Documentation]
-S[Runbooks]
-T[Observability Guides]
-U[Deployment Docs]
+U[System Documentation]
+V[Runbooks]
+W[Observability Guides]
+X[Deployment Docs]
 end
 subgraph "Deployment Layer"
-V[Vercel Configuration]
-W[Static Export]
-X[Framework Detection]
-Y[Multi-step Process]
+Y[Vercel Configuration]
+Z[Static Export]
+AA[Framework Detection]
+BB[Multi-step Process]
 end
 A --> B
 B --> C
@@ -124,30 +137,34 @@ C --> D
 C --> E
 C --> F
 C --> G
-D --> Q
-E --> Q
-F --> Q
-G --> Q
 C --> H
-H --> I
-I --> K
-I --> L
-I --> M
-H --> N
-H --> O
-H --> P
-K --> N
-K --> O
-R --> S
-R --> T
-R --> U
-S --> V
-T --> V
+C --> I
+C --> J
+D --> T
+E --> T
+F --> T
+G --> T
+H --> T
+C --> K
+K --> L
+L --> N
+L --> O
+L --> P
+K --> Q
+K --> R
+K --> S
+N --> Q
+N --> R
 U --> V
-V --> W
-V --> X
+U --> W
+U --> X
 V --> Y
-W --> A
+W --> Y
+X --> Y
+Y --> Z
+Y --> AA
+Y --> BB
+Z --> A
 ```
 
 **Diagram sources**
@@ -159,6 +176,7 @@ W --> A
 - [web-prototype/vercel.json:1-5](file://web-prototype/vercel.json#L1-L5)
 - [web-prototype/docs/observability.md:1-35](file://web-prototype/docs/observability.md#L1-L35)
 - [web-prototype/docs/rollout-strategy.md:1-23](file://web-prototype/docs/rollout-strategy.md#L1-L23)
+- [assets/css/responsive.css:1-158](file://assets/css/responsive.css#L1-L158)
 
 **Section sources**
 - [README.md:1-91](file://README.md#L1-L91)
@@ -169,6 +187,8 @@ W --> A
 ### POS Interface Component
 The main POS interface serves as the primary user interaction layer, implementing a comprehensive sales workflow with product browsing, cart management, and payment processing.
 
+**Updated** Enhanced with simplified stock management controls including direct "mark expired" functionality for products that track stock. The interface now provides streamlined access to critical inventory management functions directly from the product listing view.
+
 Key features include:
 - Multi-view navigation (POS, Products, Customers, Settings, Reports, Sync)
 - Real-time product filtering and sorting
@@ -176,6 +196,29 @@ Key features include:
 - Multi-payment method support (cash and external terminal)
 - Order holding and resuming capabilities
 - Receipt generation and printing
+- **New** Simplified stock management controls with direct expiration marking
+- **New** Unified product editor container with improved delete confirmation flow
+- **New** Question mark icon-based stock adjustment interface replacing +/- buttons
+
+### Enhanced Product Editor
+**Updated** The product editor has been redesigned with a unified container system and streamlined delete confirmation flow for improved user experience.
+
+Key improvements:
+- **Unified Container Design**: Single product-editor-shell container wraps all editing forms
+- **Streamlined Delete Flow**: Direct delete confirmation with immediate action feedback
+- **Improved Accessibility**: Better ARIA labels and keyboard navigation support
+- **Responsive Layout**: Optimized form layout for mobile and desktop devices
+- **Enhanced Icon System**: Question mark icons for common actions (mark expired, toggle featured, edit product)
+
+### Settings Interface
+**Updated** The settings interface now features a responsive tab layout that adapts to different screen sizes, providing better mobile usability and organized access to configuration options.
+
+Key enhancements:
+- **Responsive Tab System**: Segmented tab interface with badge indicators for counts
+- **Mobile Adaptation**: Tabs restructure appropriately for smaller screens
+- **Organized Categories**: Store, Categories, Users, BIR, Printer, and Prescriptions tabs
+- **Badge Indicators**: Visual counters for categories and users
+- **Adaptive Layout**: Content restructures based on available screen width
 
 ### RX Workspace System
 **New** A comprehensive workspace dedicated to pharmaceutical dispensing operations with seven specialized panels:
@@ -249,63 +292,76 @@ E[SC/PWD System]
 F[BIR Compliance]
 G[Printer Management]
 H[Audit Trail]
+I[Enhanced POS Interface]
+J[Responsive Design]
+K[Product Editor]
+L[Testing Infrastructure]
+M[Question Mark Icons]
+N[Responsive Tabs]
 end
 subgraph "Data Layer"
-I[IndexedDB]
-J[Local Storage]
-K[Seed Data]
+O[IndexedDB]
+P[Local Storage]
+Q[Seed Data]
 end
 subgraph "Business Logic"
-L[Calculations]
-M[Feature Flags]
-N[Observability]
-O[Pharmacy Logic]
-P[Compliance Logic]
+R[Calculations]
+S[Feature Flags]
+T[Observability]
+U[Pharmacy Logic]
+V[Compliance Logic]
 end
 subgraph "External Services"
-Q[Network Detection]
-R[Synchronization]
-S[Print Services]
-T[Compliance Reporting]
+W[Network Detection]
+X[Synchronization]
+Y[Print Services]
+Z[Compliance Reporting]
+AA[Responsive Media Queries]
+BB[Mock Testing]
 end
 subgraph "Documentation & Operations"
-U[System Docs]
-V[Runbooks]
-W[Observability]
-X[Deployment Strategy]
+CC[System Docs]
+DD[Runbooks]
+EE[Observability]
+FF[Deployment Strategy]
 end
 subgraph "Deployment Pipeline"
-Y[Vercel Build]
-Z[Static Export]
-AA[Framework Detection]
-BB[Multi-step Process]
+GG[Vercel Build]
+HH[Static Export]
+II[Framework Detection]
+JJ[Multi-step Process]
+KK[Responsive Optimization]
 end
 A --> B
 B --> C
-C --> I
-C --> J
-C --> K
-C --> L
-C --> M
-C --> N
 C --> O
 C --> P
-I --> Q
-I --> R
-A --> S
-A --> T
-O --> P
-P --> T
+C --> Q
+C --> R
+C --> S
+C --> T
+C --> U
+C --> V
+O --> W
+O --> X
+A --> Y
+A --> Z
 U --> V
-U --> W
-U --> X
-V --> Y
-W --> Y
-X --> Y
-Y --> Z
-Y --> AA
-Y --> BB
-Z --> A
+V --> Z
+CC --> DD
+CC --> EE
+CC --> FF
+DD --> GG
+EE --> GG
+FF --> GG
+GG --> HH
+GG --> II
+GG --> JJ
+HH --> KK
+KK --> A
+BB --> L
+MM --> M
+NN --> N
 ```
 
 **Diagram sources**
@@ -317,6 +373,7 @@ Z --> A
 - [web-prototype/vercel.json:1-5](file://web-prototype/vercel.json#L1-L5)
 - [web-prototype/docs/observability.md:1-35](file://web-prototype/docs/observability.md#L1-L35)
 - [web-prototype/docs/rollout-strategy.md:1-23](file://web-prototype/docs/rollout-strategy.md#L1-L23)
+- [assets/css/responsive.css:18-158](file://assets/css/responsive.css#L18-L158)
 
 The architecture implements a clean separation between presentation, state management, and data persistence layers, enabling easy testing and maintenance while supporting offline-first operation. The new pharmaceutical features are integrated through specialized panels and enhanced type definitions. The deployment pipeline now includes Vercel's multi-step build process with static export optimization. Comprehensive documentation is integrated throughout the system for operational excellence.
 
@@ -362,7 +419,6 @@ class usePosStore {
 +Transaction lastReceipt
 +boolean syncing
 +FeatureFlags featureFlags
-+TelemetryEvent[] telemetryEvents
 +calculateCartTotals()
 +completeSale()
 +holdOrder()
@@ -475,15 +531,20 @@ UserAction --> |Apply SC/PWD| ValidateScPwd["Validate SC/PWD Eligibility"]
 UserAction --> |Complete Sale| ProcessSale["Process Payment"]
 UserAction --> |RX Operation| HandleRx["Handle RX Workflow"]
 UserAction --> |Sync Now| TriggerSync["Trigger Manual Sync"]
+UserAction --> |Mark Expired| DirectExpire["Direct Expiration Marking"]
+UserAction --> |Question Icon| IconAction["Icon-based Action"]
 UpdateCart --> Persist["Persist to IndexedDB"]
 ValidateScPwd --> UpdateDiscount["Update Discount State"]
 ProcessSale --> SaveTransaction["Save Transaction"]
 HandleRx --> UpdateRxState["Update RX State"]
 TriggerSync --> FlushQueue["Flush Sync Queue"]
+DirectExpire --> UpdateStock["Update Stock State"]
+IconAction --> UpdateStock
 UpdateDiscount --> Persist
 SaveTransaction --> Persist
 UpdateRxState --> Persist
 FlushQueue --> Persist
+UpdateStock --> Persist
 Persist --> Refresh["Refresh State"]
 Refresh --> Render
 ```
@@ -496,6 +557,110 @@ Refresh --> Render
 **Section sources**
 - [web-prototype/src/components/pos-prototype.tsx:58-427](file://web-prototype/src/components/pos-prototype.tsx#L58-L427)
 - [web-prototype/src/lib/use-pos-store.ts:51-433](file://web-prototype/src/lib/use-pos-store.ts#L51-L433)
+
+## Enhanced POS Interface Improvements
+
+### Simplified Stock Management Controls
+**Updated** The POS interface now includes enhanced stock management controls with direct product expiration marking capabilities.
+
+Key enhancements:
+- **Direct Expiration Marking**: Products that track stock now display a "Mark expired" button for immediate action
+- **Streamlined Workflow**: Eliminates need to navigate to separate product management screens for basic stock operations
+- **Visual Indicators**: Clear visual feedback for expired products with appropriate styling
+- **Quick Actions**: One-click solutions for common inventory management tasks
+- **Question Mark Icon System**: Streamlined icon-based interface for common actions
+
+### Unified Product Editor Container
+**Updated** The product editor has been redesigned with a unified container system for improved user experience.
+
+Key improvements:
+- **Consistent Container**: All product editing forms now use the product-editor-shell container for consistent styling
+- **Streamlined Delete Flow**: Direct delete confirmation with immediate action feedback and confirmation dialog
+- **Improved Accessibility**: Better ARIA labels and keyboard navigation support across all editor forms
+- **Responsive Layout**: Optimized form layout for mobile and desktop devices with adaptive sizing
+- **Enhanced Icon System**: Question mark icons replace traditional form elements for better visual hierarchy
+
+### Question Mark Icon-Based Stock Adjustment
+**New** Stock adjustment functionality has been restructured with a question mark icon-based interface that replaces separate +/- buttons.
+
+Key features:
+- **Icon-Based Controls**: Question mark icons replace traditional +/- buttons for stock adjustments
+- **Streamlined Interface**: Reduces visual clutter and provides more intuitive controls
+- **Accessibility Improvements**: Better screen reader support and keyboard navigation
+- **Mobile Optimization**: Touch-friendly icon targets optimized for mobile devices
+- **Consistent Styling**: Unified icon system across all product management actions
+
+### Enhanced Settings Interface
+**New** The settings interface now features a responsive tab layout that adapts to different screen sizes for better mobile usability.
+
+Key improvements:
+- **Responsive Tab System**: Segmented tab interface with badge indicators for counts
+- **Mobile Adaptation**: Tabs restructure appropriately for smaller screens
+- **Organized Categories**: Store, Categories, Users, BIR, Printer, and Prescriptions tabs
+- **Badge Indicators**: Visual counters for categories and users
+- **Adaptive Layout**: Content restructures based on available screen width
+
+### Enhanced Product Listing Experience
+**Updated** The product listing interface now provides more intuitive access to inventory management functions.
+
+Key features:
+- **Inline Stock Controls**: Direct stock management actions from the main product grid
+- **Quick Status Updates**: Immediate visibility of product status (expired, near expiry, low stock)
+- **Streamlined Navigation**: Reduced steps between product viewing and management actions
+- **Mobile Optimization**: Touch-friendly controls optimized for tablet and mobile device usage
+- **Icon-Based Actions**: Question mark icons for common operations (mark expired, toggle featured, edit)
+
+**Section sources**
+- [web-prototype/src/components/pos-prototype.tsx:1014-1035](file://web-prototype/src/components/pos-prototype.tsx#L1014-L1035)
+- [web-prototype/src/components/pos-prototype.tsx:1056-1268](file://web-prototype/src/components/pos-prototype.tsx#L1056-L1268)
+- [web-prototype/src/components/pos-prototype.tsx:814-816](file://web-prototype/src/components/pos-prototype.tsx#L814-L816)
+- [web-prototype/src/components/pos-prototype.tsx:1464-1663](file://web-prototype/src/components/pos-prototype.tsx#L1464-L1663)
+
+## Responsive Design Enhancements
+
+### Comprehensive Mobile and Tablet Support
+**Updated** The system now includes comprehensive responsive design improvements across all device sizes and orientations.
+
+**Mobile Optimizations (Max-width: 767px):**
+- **Touch-Friendly Controls**: Optimized button sizes and spacing for touch interaction
+- **Collapsible Navigation**: Side navigation collapses to hamburger menu for smaller screens
+- **Adaptive Layouts**: Product grids and tables adapt to single-column layouts on mobile devices
+- **Optimized Typography**: Font sizes and line heights adjusted for mobile readability
+- **Reduced Horizontal Scroll**: Content reflow to minimize horizontal scrolling requirements
+- **Responsive Tabs**: Settings tabs adapt to single-column layout on mobile devices
+
+**Tablet Optimizations (768px - 1024px):**
+- **Dual-Column Layouts**: Strategic use of two-column layouts for improved space utilization
+- **Responsive Tables**: Data tables become scrollable or restructured for tablet screens
+- **Adaptive Forms**: Form fields resize and reorganize based on available screen width
+- **Optimized Input Methods**: Touch-optimized input controls for tablets
+- **Tab Adaptation**: Settings tabs restructure for better tablet usability
+
+**Desktop Enhancements:**
+- **Wide Screen Support**: Optimized layouts for ultra-wide displays
+- **Enhanced Navigation**: Expanded side navigation with additional functionality
+- **Improved Data Visualization**: Larger charts and tables optimized for desktop viewing
+- **Multi-Window Support**: Better support for split-screen and multi-monitor setups
+
+### CSS Architecture Improvements
+**Updated** The responsive design system includes enhanced CSS architecture with improved media query organization.
+
+**Media Query Organization:**
+- **Mobile-First Approach**: Base styles optimized for mobile devices first
+- **Progressive Enhancement**: Additional styles layered for larger screens
+- **Device-Specific Optimizations**: Tailored experiences for specific device categories
+- **Orientation Awareness**: Responsive behavior adapts to device orientation changes
+
+**Layout System Enhancements:**
+- **Flexible Grid System**: CSS Grid and Flexbox implementations for responsive layouts
+- **Adaptive Components**: UI components that resize and restructure based on available space
+- **Performance Optimizations**: Efficient CSS that minimizes repaint and reflow operations
+- **Cross-Browser Compatibility**: Robust support for various browser rendering engines
+
+**Section sources**
+- [assets/css/responsive.css:18-158](file://assets/css/responsive.css#L18-L158)
+- [assets/css/core.css:1-800](file://assets/css/core.css#L1-L800)
+- [assets/css/components.css:1-800](file://assets/css/components.css#L1-L800)
 
 ## New Pharmaceutical Features
 
@@ -667,69 +832,120 @@ B[React 18+]
 C[TypeScript]
 D[Pharmacy Extensions]
 E[Vercel Platform]
+F[Responsive Framework]
+G[Test Infrastructure]
+H[Mock Testing]
 end
 subgraph "Development Dependencies"
-F[Vitest]
-G[Testing Library]
-H[ESLint]
-I[Prettier]
-J[Static Export Tools]
+I[Vitest]
+J[Testing Library]
+K[ESLint]
+L[Prettier]
+M[Static Export Tools]
+N[CSS Preprocessors]
 end
 subgraph "Database Layer"
-K[IndexedDB]
-L[fake-indexeddb]
+O[IndexedDB]
+P[fake-indexeddb]
+Q[Responsive Utilities]
+R[Icon System]
 end
 subgraph "UI Components"
-M[Bootstrap]
-N[Chosen Select]
-O[jQuery UI]
-P[Pharmacy UI Kit]
+S[Bootstrap]
+T[Chosen Select]
+U[jQuery UI]
+V[Pharmacy UI Kit]
+W[Responsive Components]
+X[Tab System]
 end
 subgraph "Pharmacy Libraries"
-Q[Drug Classification]
-R[SC/PWD Validation]
-S[BIR Compliance]
-T[Printer SDK]
+Y[Drug Classification]
+Z[SC/PWD Validation]
+AA[BIR Compliance]
+BB[Printer SDK]
+CC[Responsive Design]
+DD[Icon-Based Actions]
 end
 subgraph "Deployment Tools"
-U[Vercel CLI]
-V[Next.js Export]
-W[Static Site Generator]
-X[CDN Optimization]
+EE[Vercel CLI]
+FF[Next.js Export]
+GG[Static Site Generator]
+HH[CDN Optimization]
+II[Responsive Optimization]
 end
 subgraph "Documentation Tools"
-Y[Markdown Docs]
-Z[Runbook Templates]
-AA[Observability Tools]
-BB[Deployment Scripts]
+JJ[Markdown Docs]
+KK[Runbook Templates]
+LL[Observability Tools]
+MM[Deployment Scripts]
+NN[Responsive Testing]
+OO[Mock Testing]
 end
 A --> B
 A --> C
 A --> E
-D --> Q
-D --> R
-D --> S
-D --> T
-F --> G
-H --> I
-J --> U
-J --> V
-J --> W
-J --> X
-K --> L
-B --> M
-B --> N
-B --> O
-B --> P
-Q --> R
-R --> S
-S --> T
-U --> V
-V --> W
-W --> X
+A --> F
+A --> G
+A --> H
+D --> Y
+D --> Z
+D --> AA
+D --> BB
+F --> CC
+F --> DD
+F --> EE
+F --> FF
+F --> GG
+F --> HH
+F --> II
+E --> EE
+E --> FF
+E --> GG
+E --> HH
+E --> II
+G --> H
+G --> O
+G --> P
+G --> Q
+G --> R
+I --> J
+I --> K
+I --> L
+M --> EE
+M --> FF
+M --> GG
+M --> HH
+M --> II
+N --> CC
+N --> DD
+N --> EE
+N --> FF
+N --> GG
+N --> HH
+N --> II
+O --> P
+B --> S
+B --> T
+B --> U
+B --> V
+B --> W
+B --> X
 Y --> Z
 Z --> AA
 AA --> BB
+CC --> DD
+DD --> EE
+DD --> FF
+DD --> GG
+DD --> HH
+DD --> II
+JJ --> KK
+JJ --> LL
+JJ --> MM
+KK --> NN
+LL --> OO
+MM --> NN
+NN --> OO
 ```
 
 **Diagram sources**
@@ -739,6 +955,7 @@ AA --> BB
 - [web-prototype/vercel.json:1-5](file://web-prototype/vercel.json#L1-L5)
 - [web-prototype/docs/observability.md:1-35](file://web-prototype/docs/observability.md#L1-L35)
 - [web-prototype/docs/rollout-strategy.md:1-23](file://web-prototype/docs/rollout-strategy.md#L1-L23)
+- [assets/css/responsive.css:18-158](file://assets/css/responsive.css#L18-L158)
 
 ### Module Dependencies
 
@@ -754,6 +971,9 @@ The system maintains clean module boundaries with clear import relationships:
 - **Framework Modules** leverage Next.js optimizations and static generation
 - **Documentation Modules** provide operational guidance and system maintenance procedures
 - **Runbook Modules** offer procedural guidance for incident response and system maintenance
+- **Responsive Modules** provide cross-device compatibility and adaptive layouts
+- **Testing Modules** include mock testing infrastructure with vi.spyOn for window.confirm
+- **Icon System Modules** provide streamlined icon-based user interface components
 
 **Section sources**
 - [web-prototype/package.json:1-34](file://web-prototype/package.json#L1-L34)
@@ -777,6 +997,8 @@ The application employs several strategies to maintain optimal performance:
 - **Pagination**: Large datasets are paginated to limit DOM rendering overhead
 - **Efficient Sorting**: Custom sorting algorithms optimized for product data
 - **RX Workspace Optimization**: Panel-specific data loading and filtering
+- **Responsive Optimization**: Adaptive layouts reduce unnecessary reflows and repaints
+- **Icon System Efficiency**: Question mark icons reduce DOM complexity compared to traditional buttons
 
 ### Network Optimization
 - **Connection Monitoring**: Real-time detection of network state changes
@@ -789,6 +1011,8 @@ The application employs several strategies to maintain optimal performance:
 - **SC/PWD Validation**: Eligibility checks are performed efficiently with minimal network calls
 - **Audit Trail Pagination**: Large audit logs are paginated for better performance
 - **Printer Queue Management**: Print jobs are managed asynchronously to prevent UI blocking
+- **Responsive Performance**: Optimized layouts reduce computational overhead on mobile devices
+- **Icon-Based Performance**: Question mark icons provide better touch targets and reduced code complexity
 
 ### Static Export Performance
 **Updated** The static export configuration provides additional performance benefits:
@@ -806,6 +1030,31 @@ The application employs several strategies to maintain optimal performance:
 - **Automated Procedures**: Standardized processes improve incident response times
 - **Observability Integration**: Real-time monitoring reduces system downtime
 - **Deployment Automation**: Streamlined build processes improve release frequency
+- **Responsive Documentation**: Mobile-optimized documentation improves accessibility
+
+### Responsive Performance Optimization
+**Updated** The responsive design system includes performance optimizations:
+
+- **Efficient Media Queries**: Optimized CSS media queries reduce style recalculation overhead
+- **Adaptive Rendering**: Components adapt to device capabilities for optimal performance
+- **Touch Optimization**: Touch-friendly interfaces reduce accidental interactions and re-renders
+- **Cross-Browser Compatibility**: Test infrastructure includes mock testing for consistent behavior
+- **Performance Budgets**: Responsive components adhere to performance budgets for consistent experience
+
+### Testing Infrastructure Improvements
+**Updated** The testing infrastructure has been enhanced with improved mocking capabilities:
+
+- **vi.spyOn Integration**: Window.confirm mocking for reliable test execution
+- **Mock Testing**: Comprehensive mocking of browser APIs and window functions
+- **Test Isolation**: Improved test isolation with proper cleanup and restoration
+- **Reliable Assertions**: More reliable assertions for user interaction testing
+- **Performance Testing**: Optimized test execution with minimal overhead
+
+**Section sources**
+- [web-prototype/src/lib/observability.ts:49-94](file://web-prototype/src/lib/observability.ts#L49-L94)
+- [web-prototype/src/lib/use-pos-store.ts:143-158](file://web-prototype/src/lib/use-pos-store.ts#L143-L158)
+- [web-prototype/docs/observability.md:1-35](file://web-prototype/docs/observability.md#L1-L35)
+- [web-prototype/src/components/pos-prototype.test.tsx:195-211](file://web-prototype/src/components/pos-prototype.test.tsx#L195-L211)
 
 ## Troubleshooting Guide
 
@@ -834,6 +1083,10 @@ The application employs several strategies to maintain optimal performance:
 - Disable unnecessary browser extensions
 - Check for memory leaks in long sessions
 - Monitor network latency and response times
+- **Responsive Issues**: Test on multiple device sizes and orientations
+- **Mobile Performance**: Optimize for reduced bandwidth and processing power
+- **Icon System Issues**: Verify question mark icon rendering across different browsers
+- **Tab Layout Problems**: Check responsive tab behavior on mobile devices
 
 **Deployment Issues**
 - **Vercel Build Failures**: Verify subdirectory structure and build commands
@@ -847,6 +1100,19 @@ The application employs several strategies to maintain optimal performance:
 - **Observability Gaps**: Ensure telemetry events are properly configured
 - **Deployment Confusion**: Review rollout strategy documentation for environment differences
 
+**Responsive Design Issues**
+- **Layout Breaks**: Verify media query breakpoints and fallback styles
+- **Touch Interactions**: Test touch targets and gesture recognition
+- **Performance on Mobile**: Monitor CPU and memory usage on mobile devices
+- **Cross-Browser Compatibility**: Test responsive behavior across different browsers
+- **Tab Layout Issues**: Verify tab adaptation on different screen sizes
+
+**Testing Infrastructure Issues**
+- **Mock Failures**: Verify vi.spyOn setup and proper restoration
+- **Test Isolation**: Ensure proper cleanup between test cases
+- **Browser API Mocks**: Check window.confirm and other browser APIs are properly mocked
+- **Test Reliability**: Verify tests pass consistently across different environments
+
 ### Debugging Tools
 
 The application includes comprehensive observability features:
@@ -856,11 +1122,14 @@ The application includes comprehensive observability features:
 - **Alert System**: Automated notifications for system health issues
 - **Snapshot Generation**: Real-time system health metrics
 - **Pharmacy Event Logging**: Specialized logging for pharmaceutical operations
+- **Responsive Testing Tools**: Device simulation and performance profiling tools
+- **Mock Testing Infrastructure**: Comprehensive mocking for reliable test execution
 
 **Section sources**
 - [web-prototype/src/lib/observability.ts:49-94](file://web-prototype/src/lib/observability.ts#L49-L94)
 - [web-prototype/src/lib/use-pos-store.ts:143-158](file://web-prototype/src/lib/use-pos-store.ts#L143-L158)
 - [web-prototype/docs/observability.md:1-35](file://web-prototype/docs/observability.md#L1-L35)
+- [web-prototype/src/components/pos-prototype.test.tsx:99-114](file://web-prototype/src/components/pos-prototype.test.tsx#L99-L114)
 
 ## Conclusion
 
@@ -872,12 +1141,16 @@ The Next.js Web POS Prototype represents a comprehensive solution for modern pha
 
 **Updated** The addition of comprehensive frontend system documentation significantly enhances operational excellence. The observability guidelines, deployment rollout strategies, and operational runbooks provide systematic approaches to system maintenance and incident response. This documentation infrastructure supports both development teams and operational staff in maintaining system reliability and performance.
 
+**Updated** Recent enhancements in POS interface simplifications, product editor unification, responsive design improvements, and testing infrastructure upgrades demonstrate a commitment to user experience optimization and development efficiency. The simplified stock management controls, streamlined delete confirmation flows, comprehensive responsive design support, and improved testing capabilities position this system as a leader in pharmacy POS solutions.
+
+**Updated** The restructuring of stock adjustment functionality with question mark icon-based interface and enhanced settings interface with responsive tabs represent significant improvements in user experience and accessibility. These changes focus on reducing cognitive load and improving task completion efficiency for pharmacy staff.
+
 Key strengths of the implementation include:
 
 - **Modular Architecture**: Clean separation of concerns enables easy maintenance and extension
 - **Type Safety**: Comprehensive TypeScript coverage ensures reliability and developer productivity  
 - **Offline-First Design**: Reliable operation in challenging network environments
-- **Extensive Testing**: Comprehensive test suite covering unit, integration, and contract testing
+- **Extensive Testing**: Comprehensive test suite covering unit, integration, and contract testing with improved mocking
 - **Observability**: Built-in monitoring and alerting for operational excellence
 - **Pharmaceutical Compliance**: Complete adherence to Philippine pharmaceutical regulations
 - **Advanced Features**: Sophisticated RX dispensing, discount management, and reporting capabilities
@@ -886,5 +1159,10 @@ Key strengths of the implementation include:
 - **Vercel Integration**: Multi-step build process ensures reliable and efficient deployments
 - **Comprehensive Documentation**: Operational runbooks and observability guidelines support system maintenance
 - **Standardized Processes**: Deployment strategies and rollback procedures ensure safe production releases
+- **Enhanced User Experience**: Simplified workflows, responsive design, and icon-based interfaces improve operational efficiency
+- **Mobile Optimization**: Comprehensive responsive design ensures optimal performance across all devices
+- **Improved Testing**: Mock testing infrastructure with vi.spyOn provides reliable test execution
 
 The prototype demonstrates proven patterns for POS system development while maintaining flexibility for future enhancements. Its foundation supports scalable deployment across multiple pharmacy locations with centralized management capabilities, comprehensive compliance reporting, and specialized pharmaceutical workflow automation. The enhanced deployment configuration ensures reliable operation in production environments with optimal performance characteristics, while the comprehensive documentation system provides operational excellence and systematic incident response capabilities.
+
+The recent improvements in POS interface usability, product editor design, responsive capabilities, and testing infrastructure position this system as a comprehensive solution for modern pharmacy operations, combining technical excellence with practical business requirements for optimal user experience and operational efficiency.

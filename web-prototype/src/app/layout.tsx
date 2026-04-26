@@ -9,8 +9,8 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "PharmaSpot Web POS",
-  description: "Offline-first POS prototype for PharmaSpot",
+  title: "PharmaPOS PH Web POS",
+  description: "Offline-first POS prototype for PharmaPOS PH",
   manifest: "/manifest.json"
 };
 

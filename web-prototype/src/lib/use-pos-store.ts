@@ -15,13 +15,14 @@ import {
   deleteOne,
   enqueueSync,
   getAll,
+  getFeatureFlags,
   getOne,
+  login as loginLocal,
   markPendingSyncAsSynced,
   putMany,
   putOne,
   resetPrototypeData,
-  seedIfNeeded,
-  getFeatureFlags
+  seedIfNeeded
 } from "./db";
 import {
   buildSnapshot,
@@ -34,6 +35,7 @@ import {
   type TelemetryEvent
 } from "./observability";
 import type {
+  BirSettings,
   CartItem,
   Category,
   Customer,
@@ -42,7 +44,9 @@ import type {
   PaymentStatus,
   PrescriptionDraft,
   PrescriptionRefusal,
+  PrinterProfile,
   Product,
+  ReprintQueueItem,
   RxInspectionSnapshot,
   RxPharmacist,
   RxRedFlag,
@@ -90,6 +94,7 @@ export function usePosStore() {
   const [forcedOffline, setForcedOffline] = useState(false);
   const [browserOnline, setBrowserOnline] = useState(true);
   const [lastReceipt, setLastReceipt] = useState<Transaction | null>(null);
+  const [printFailure, setPrintFailure] = useState<{ transaction: Transaction; printer: PrinterProfile | null } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
@@ -141,7 +146,7 @@ export function usePosStore() {
 
     setProducts(nextProducts);
     setCategories(nextCategories);
-    setCustomers(nextCustomers.map((c: Customer) => ({ ...c, createdAt: c.createdAt ?? new Date(0).toISOString() })));
+    setCustomers(nextCustomers.map((customer) => ({ ...customer, createdAt: customer.createdAt ?? new Date(0).toISOString() })));
     setUsers(nextUsers);
     setSettings(nextSettings || null);
     setTransactions(nextTransactions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
@@ -158,9 +163,9 @@ export function usePosStore() {
         setBrowserOnline(typeof navigator === "undefined" ? true : navigator.onLine);
         await seedIfNeeded();
         await refresh();
-        const admin = await getAll("users");
         if (mounted) {
-          setCurrentUser(admin.find((user) => user.username === "admin") || null);
+          const result = await loginLocal("admin", "admin");
+          setCurrentUser(result.auth && result.user ? result.user : null);
           setLoadState("ready");
         }
       } catch (bootError) {
@@ -263,6 +268,12 @@ export function usePosStore() {
       if (!settings || !currentUser || cart.length === 0) return null;
       if (!featureFlags.payments) return null;
       return traced("pos.complete_sale", { paymentMethod: input.method, cartLines: cart.length }, async () => {
+        // Load BIR settings for OR series
+        const birRaw = await getOne("birSettings", "bir");
+        const bir = birRaw as BirSettings | undefined;
+        if (bir && bir.currentOrNumber >= bir.orSeriesEnd) {
+          throw new Error("OR series exhausted. Please contact BIR for a new PTU.");
+        }
         const scPwdSettings = settings.scPwdSettings;
         const isScPwdActive = activeScPwdDiscount && scPwdSettings?.enabled;
         const processedCart = isScPwdActive
@@ -274,9 +285,13 @@ export function usePosStore() {
           isScPwdActive ? 0 : discount
         );
         const paid = input.method === "cash" ? input.paid : saleTotals.total;
+
+        // Assign OR number from BIR settings or fallback to local number
+        const orNumber = bir ? String(bir.currentOrNumber) : makeLocalNumber();
+
         const transaction: Transaction = {
           id: crypto.randomUUID(),
-          localNumber: makeLocalNumber(),
+          localNumber: orNumber,
           items: processedCart.map((item) => ({ ...item, lineTotal: money(item.price * item.quantity) })),
           customerId,
           cashierId: currentUser.id,
@@ -332,6 +347,13 @@ export function usePosStore() {
         const updatedProducts = decrementStock(products, processedCart);
         await putMany("products", updatedProducts);
         await putOne("transactions", transaction);
+
+        // Increment and persist OR number
+        if (bir) {
+          const updatedBir: BirSettings & { id: string } = { ...bir, id: "bir", currentOrNumber: bir.currentOrNumber + 1 };
+          await putOne("birSettings", updatedBir);
+        }
+
         await enqueueSync({ entity: "transaction", operation: "create", payload: transaction });
         await enqueueSync({ entity: "product", operation: "update", payload: updatedProducts });
         recordEvent({ type: "sync_enqueued", details: { entity: "transaction", localNumber: transaction.localNumber } });
@@ -342,6 +364,35 @@ export function usePosStore() {
           status: input.paymentStatus,
           total: transaction.total
         });
+
+        // Attempt thermal print
+        try {
+          const { PrinterService, createPrinterBackend, buildReceipt, enqueuePrintJob } = await import("./printer");
+          const profiles = (await getAll("printerProfiles")) as PrinterProfile[];
+          const orPrinter = profiles.find((p) => p.isDefault && (p.role === "or" || p.role === "both"))
+            ?? profiles.find((p) => p.role === "or" || p.role === "both");
+          if (orPrinter) {
+            const service = new PrinterService(createPrinterBackend);
+            const connectResult = await service.connect(orPrinter);
+            if (connectResult.status === "success") {
+              const commands = buildReceipt("normal", orPrinter, bir, transaction);
+              const printResult = await service.print(commands);
+              await service.disconnect();
+              if (printResult.status !== "success") {
+                await enqueuePrintJob(Number(transaction.localNumber), transaction.id, commands, orPrinter.id);
+                setPrintFailure({ transaction, printer: orPrinter });
+              } else {
+                // log success printer activity handled by pos-prototype if needed
+              }
+            } else {
+              await enqueuePrintJob(Number(transaction.localNumber), transaction.id, new Uint8Array(0), orPrinter.id);
+              setPrintFailure({ transaction, printer: orPrinter });
+            }
+          }
+        } catch (printErr) {
+          // printing failure should not fail the sale; enqueue silently
+          console.error("Print attempt failed:", printErr);
+        }
 
         setLastReceipt(transaction);
         clearCart();
@@ -534,10 +585,27 @@ export function usePosStore() {
     setLastReceipt(null);
     setScPwdTransactionLog([]);
     setScPwdAlerts([]);
+    setPrintFailure(null);
     await refresh();
   }, [clearCart, refresh]);
 
   const login = useCallback(
+    async (username: string, password: string) => {
+      const result = await loginLocal(username, password);
+      if (result.auth && result.user) {
+        setCurrentUser(result.user);
+        return true;
+      }
+      return false;
+    },
+    []
+  );
+
+  const clearPrintFailure = useCallback(() => {
+    setPrintFailure(null);
+  }, []);
+
+  const switchUser = useCallback(
     (username: string) => {
       const user = users.find((candidate) => candidate.username === username);
       if (user) setCurrentUser(user);
@@ -552,14 +620,31 @@ export function usePosStore() {
       if (!found) return [draft, ...current];
       return current.map((item) => (item.id === draft.id ? draft : item));
     });
+    putOne("prescriptions", draft);
   }, []);
 
   const logRxRefusal = useCallback((refusal: PrescriptionRefusal) => {
     setRxRefusals((current) => [refusal, ...current]);
+    putOne("auditLog", {
+      id: refusal.id,
+      action: "settings-change",
+      user: refusal.pharmacistName,
+      timestamp: refusal.createdAt,
+      details: `Refused ${refusal.productName} for ${refusal.patientName}: ${refusal.reason}`,
+      requiredRole: "supervisor",
+    });
   }, []);
 
   const addRxRedFlag = useCallback((flag: RxRedFlag) => {
     setRxRedFlags((current) => [flag, ...current]);
+    putOne("auditLog", {
+      id: crypto.randomUUID(),
+      action: "settings-change",
+      user: "system",
+      timestamp: flag.createdAt,
+      details: `Red flag raised: ${flag.title} - ${flag.reason}`,
+      requiredRole: "supervisor",
+    });
   }, []);
 
   const clearRxRedFlag = useCallback((id: string) => {
@@ -622,6 +707,8 @@ export function usePosStore() {
     online,
     totals,
     lastReceipt,
+    printFailure,
+    clearPrintFailure,
     syncing,
     featureFlags,
     setDiscount,
@@ -642,6 +729,7 @@ export function usePosStore() {
     refundTransaction,
     resetData,
     login,
+    switchUser,
     rxPharmacists,
     setRxPharmacists,
     rxPrescriptionDrafts,

@@ -1,85 +1,153 @@
 "use client";
-import { useState } from "react";
-import type { ZReading } from "@/lib/types";
+import { useState, useEffect, useCallback } from "react";
+import { getAll, putOne } from "../lib/db";
+import { getOne } from "../lib/db";
+import { logAuditEvent } from "./audit-trail";
+import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
+import type { Transaction, ZReading, BirSettings, PrinterProfile } from "@/lib/types";
 
-const fmt = (n: number) => `₱${n.toFixed(2)}`;
+const fmt = (n: number) => `\u20b1${n.toFixed(2)}`;
 
-const mockZReading: ZReading = {
-  id: "zr-001",
-  reportDate: "2026-04-25",
-  reportTime: "22:00:00",
-  machineSerial: "SN-2024-001",
-  beginningOrNumber: 49800,
-  lastOrNumber: 49920,
-  grossSales: 125750.0,
-  vatableSales: 112276.79,
-  vatExemptSales: 8500.0,
-  vatAmount: 13473.21,
-  zeroRatedSales: 0,
-  scDiscount: 2500.0,
-  pwdDiscount: 1200.0,
-  promotionalDiscount: 800.0,
-  totalDiscounts: 4500.0,
-  totalVoids: 3,
-  voidAmount: 1250.0,
-  totalReturns: 1,
-  returnAmount: 450.0,
-  netSales: 119550.0,
-  generatedBy: "Maria Santos",
-  generatedAt: "2026-04-25T22:00:00",
-  storeName: "PPOS Demo Store",
-  tin: "123-456-789-000",
-  ptuNumber: "FP102024-110-0123456-00000",
-  transactionCount: 120,
-  endingOrNumber: 49920,
-  resetFlag: false,
-};
-
-const mockHistory = [
-  { date: "2026-04-25", generatedBy: "Maria Santos", time: "22:00", pdfName: "2026-04-25_SN-2024-001_ZReading.pdf" },
-  { date: "2026-04-24", generatedBy: "Juan Cruz", time: "21:45", pdfName: "2026-04-24_SN-2024-001_ZReading.pdf" },
-  { date: "2026-04-23", generatedBy: "Maria Santos", time: "22:15", pdfName: "2026-04-23_SN-2024-001_ZReading.pdf" },
-  { date: "2026-04-22", generatedBy: "Juan Cruz", time: "21:30", pdfName: "2026-04-22_SN-2024-001_ZReading.pdf" },
-  { date: "2026-04-21", generatedBy: "Maria Santos", time: "22:00", pdfName: "2026-04-21_SN-2024-001_ZReading.pdf" },
-];
+function computeZReading(
+  transactions: Transaction[],
+  bir: BirSettings | undefined
+): Omit<ZReading, "id"> {
+  const grossSales = transactions.reduce((sum, t) => sum + t.subtotal, 0);
+  const scDiscount = transactions.reduce((sum, t) => sum + (t.scPwdMetadata?.scPwdDiscountAmount ?? 0), 0);
+  const voids = transactions.filter((t) => t.paymentStatus === "refunded");
+  const totalVoids = voids.length;
+  const voidAmount = voids.reduce((sum, t) => sum + t.total, 0);
+  const totalDiscounts = transactions.reduce((sum, t) => sum + t.discount, 0);
+  const vatAmount = transactions.reduce((sum, t) => sum + t.tax, 0);
+  const netSales = grossSales - totalDiscounts - voidAmount;
+  const first = transactions[transactions.length - 1];
+  const last = transactions[0];
+  const now = new Date();
+  return {
+    reportDate: now.toISOString().slice(0, 10),
+    reportTime: now.toISOString().slice(11, 19),
+    machineSerial: bir?.machineSerial ?? "",
+    beginningOrNumber: first ? Number(first.localNumber) : bir?.orSeriesStart ?? 0,
+    lastOrNumber: last ? Number(last.localNumber) : bir?.currentOrNumber ?? 0,
+    grossSales,
+    vatableSales: grossSales - vatAmount,
+    vatExemptSales: 0,
+    vatAmount,
+    zeroRatedSales: 0,
+    scDiscount,
+    pwdDiscount: 0,
+    promotionalDiscount: totalDiscounts - scDiscount,
+    totalDiscounts,
+    totalVoids,
+    voidAmount,
+    totalReturns: 0,
+    returnAmount: 0,
+    netSales,
+    generatedBy: "Current User",
+    generatedAt: now.toISOString(),
+    storeName: bir?.registeredName ?? "",
+    tin: bir?.tin ?? "",
+    ptuNumber: bir?.ptuNumber ?? "",
+    transactionCount: transactions.length,
+    endingOrNumber: last ? Number(last.localNumber) : bir?.currentOrNumber ?? 0,
+    resetFlag: false,
+  };
+}
 
 export function ZReadingReport() {
-  const [generated, setGenerated] = useState(false);
+  const [generated, setGenerated] = useState<ZReading | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [zGeneratedToday, setZGeneratedToday] = useState(false);
   const [showOverride, setShowOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
-  const r = mockZReading;
+  const [reading, setReading] = useState<Omit<ZReading, "id"> | null>(null);
+  const [printStatus, setPrintStatus] = useState<string | null>(null);
+  const [history, setHistory] = useState<ZReading[]>([]);
 
-  function handleGenerate() {
-    setGenerated(true);
-    setZGeneratedToday(true);
+  const loadAndCompute = useCallback(async () => {
+    const [txs, birRaw, zHistory] = await Promise.all([
+      getAll("transactions") as Promise<Transaction[]>,
+      getOne("birSettings", "bir"),
+      getAll("zReadings") as Promise<ZReading[]>,
+    ]);
+    const bir = birRaw as BirSettings | undefined;
+    const sorted = txs.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const computed = computeZReading(sorted, bir);
+    setReading(computed);
+    setHistory(
+      (zHistory as ZReading[])
+        .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))
+        .slice(0, 10)
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    setZGeneratedToday(zHistory.some((z) => z.reportDate === today));
+  }, []);
+
+  useEffect(() => {
+    loadAndCompute();
+  }, [loadAndCompute]);
+
+  async function handleGenerate(override?: string) {
+    if (!reading) return;
+    setGenerating(true);
+    try {
+      const report: ZReading = {
+        ...reading,
+        id: crypto.randomUUID(),
+        resetFlag: Boolean(override),
+        overrideReason: override,
+        overrideBy: override ? "Admin" : undefined,
+      };
+      await putOne("zReadings", report);
+      await logAuditEvent(
+        "z-reading",
+        "Current User",
+        override
+          ? `Z-Reading override: ${override}`
+          : `Z-Reading generated for ${reading.reportDate}`,
+        "admin"
+      );
+      setGenerated(report);
+      setShowOverride(false);
+      setOverrideReason("");
+      setZGeneratedToday(true);
+      await loadAndCompute();
+    } finally {
+      setGenerating(false);
+    }
   }
 
-  function handleOverride() {
-    if (!overrideReason.trim()) return;
-    setShowOverride(false);
-    setOverrideReason("");
-    setGenerated(true);
-  }
+  const r = generated ?? reading;
 
   return (
     <div>
       <div className="report-actions">
-        {zGeneratedToday ? (
+        {zGeneratedToday && !generated ? (
           <>
             <button className="primary report-generate-btn disabled" disabled>
-              🔒 Z-Reading already generated for today
+              Z-Reading already generated for today
             </button>
             <button
-              style={{ background: "none", border: "none", color: "var(--primary)", textDecoration: "underline", cursor: "pointer", fontSize: 13 }}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--primary)",
+                textDecoration: "underline",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
               onClick={() => setShowOverride(true)}
             >
               Override
             </button>
           </>
         ) : (
-          <button className="primary report-generate-btn" onClick={handleGenerate}>
-            Generate Z-Reading
+          <button
+            className="primary report-generate-btn"
+            onClick={() => handleGenerate()}
+            disabled={generating || !reading}
+          >
+            {generating ? "Generating..." : "Generate Z-Reading"}
           </button>
         )}
       </div>
@@ -104,7 +172,11 @@ export function ZReadingReport() {
             <input type="text" defaultValue="Admin" readOnly style={{ marginBottom: 16 }} />
             <div className="override-modal-actions">
               <button onClick={() => setShowOverride(false)}>Cancel</button>
-              <button className="primary" onClick={handleOverride} disabled={!overrideReason.trim()}>
+              <button
+                className="primary"
+                onClick={() => handleGenerate(overrideReason)}
+                disabled={!overrideReason.trim() || generating}
+              >
                 Confirm Override
               </button>
             </div>
@@ -112,15 +184,15 @@ export function ZReadingReport() {
         </div>
       )}
 
-      {generated && (
+      {r && (
         <>
           <div className="bir-report-card">
             <div className="bir-report-header">
               <h2>Z-READING REPORT</h2>
-              <p><strong>{r.storeName}</strong></p>
-              <p>TIN: {r.tin}</p>
-              <p>PTU No: {r.ptuNumber}</p>
-              <p>Machine S/N: {r.machineSerial}</p>
+              <p><strong>{r.storeName || "Store"}</strong></p>
+              <p>TIN: {r.tin || "Not configured"}</p>
+              <p>PTU No: {r.ptuNumber || "N/A"}</p>
+              <p>Machine S/N: {r.machineSerial || "N/A"}</p>
               <p>Date: {r.reportDate}</p>
             </div>
 
@@ -195,12 +267,44 @@ export function ZReadingReport() {
               </div>
             </div>
 
-            <div className="report-pdf-indicator">
-              📄 Saved as {r.reportDate}_{r.machineSerial}_ZReading.pdf
-            </div>
+            {r.resetFlag && r.overrideReason && (
+              <div className="report-pdf-indicator">
+                Override reason: {r.overrideReason}
+              </div>
+            )}
 
             <div className="report-actions" style={{ marginTop: 16 }}>
-              <button className="primary">🖨️ Print Z-Reading</button>
+              <button
+                className="primary"
+                onClick={async () => {
+                  if (!r) return;
+                  setPrintStatus("Connecting…");
+                  const profiles = (await getAll("printerProfiles")) as PrinterProfile[];
+                  const printer = profiles.find((p) => p.role === "report" || p.role === "both");
+                  if (!printer) {
+                    setPrintStatus("No report printer configured");
+                    return;
+                  }
+                  const service = new PrinterService(createPrinterBackend);
+                  const connectResult = await service.connect(printer);
+                  if (connectResult.status !== "success") {
+                    setPrintStatus(`Failed: ${connectResult.status}`);
+                    await service.disconnect();
+                    return;
+                  }
+                  const commands = buildReceipt("z-reading", printer, undefined, r as ZReading);
+                  const result = await service.print(commands);
+                  await service.disconnect();
+                  setPrintStatus(result.status === "success" ? "Printed" : `Failed: ${result.status}`);
+                }}
+              >
+                Print Z-Reading
+              </button>
+              {printStatus && (
+                <span style={{ fontSize: 12, marginLeft: 8, color: printStatus.startsWith("Failed") ? "var(--danger)" : "var(--success)" }}>
+                  {printStatus}
+                </span>
+              )}
               <span className="report-permission-note">Auto-cut enabled</span>
             </div>
           </div>
@@ -213,16 +317,25 @@ export function ZReadingReport() {
                 <th>Date</th>
                 <th>Generated By</th>
                 <th>Time</th>
-                <th>PDF</th>
+                <th>Net Sales</th>
+                <th>OR Range</th>
               </tr>
             </thead>
             <tbody>
-              {mockHistory.map((h) => (
-                <tr key={h.date}>
-                  <td>{h.date}</td>
+              {history.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 16 }}>
+                    No Z-Reading history yet.
+                  </td>
+                </tr>
+              )}
+              {history.map((h) => (
+                <tr key={h.id}>
+                  <td>{h.reportDate}</td>
                   <td>{h.generatedBy}</td>
-                  <td>{h.time}</td>
-                  <td><a href="#">{h.pdfName}</a></td>
+                  <td>{h.reportTime}</td>
+                  <td>{fmt(h.netSales)}</td>
+                  <td>{h.beginningOrNumber} - {h.endingOrNumber}</td>
                 </tr>
               ))}
             </tbody>

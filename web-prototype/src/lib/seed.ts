@@ -228,7 +228,7 @@ const seedScPwdSettings: ScPwdSettings = {
 
 export const seedSettings: Settings = {
   id: "store",
-  store: "PharmaSpot Demo",
+  store: "PharmaPOS PH Demo",
   addressOne: "123 Main Street",
   addressTwo: "Makati City",
   contact: "+63 2 555 0199",
@@ -236,7 +236,7 @@ export const seedSettings: Settings = {
   vatPercentage: 12,
   chargeTax: true,
   quickBilling: false,
-  receiptFooter: "Thank you for choosing PharmaSpot.",
+  receiptFooter: "Thank you for choosing PharmaPOS PH.",
   expiryAlertDays: 30,
   scPwdSettings: seedScPwdSettings
 };

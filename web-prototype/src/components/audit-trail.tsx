@@ -1,36 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { getAll, putOne } from "../lib/db";
 import type { AuditEntry, AuditActionType, PrinterActivityLog } from "@/lib/types";
-
-const mockAuditLog: AuditEntry[] = [
-  { id: "a1", action: "z-reading", user: "Maria Santos", timestamp: "2026-04-25T22:00:00", details: "Z-Reading generated for 2026-04-25", requiredRole: "admin" },
-  { id: "a2", action: "x-reading", user: "Maria Santos", timestamp: "2026-04-25T14:30:00", details: "X-Reading snapshot taken", requiredRole: "cashier" },
-  { id: "a3", action: "void", user: "Juan Cruz", timestamp: "2026-04-25T13:15:00", details: "Voided OR #49918 - Customer cancellation", requiredRole: "supervisor" },
-  { id: "a4", action: "reprint", user: "Maria Santos", timestamp: "2026-04-25T12:45:00", details: "Reprinted OR #49915", requiredRole: "cashier" },
-  { id: "a5", action: "login", user: "Maria Santos", timestamp: "2026-04-25T08:00:00", details: "User logged in", requiredRole: "cashier" },
-  { id: "a6", action: "ejournal-export", user: "Admin", timestamp: "2026-04-24T23:00:00", details: "eJournal exported for 04/24/2026", requiredRole: "admin" },
-  { id: "a7", action: "esales-export", user: "Admin", timestamp: "2026-04-24T23:05:00", details: "eSales report generated for March 2026", requiredRole: "admin" },
-  { id: "a8", action: "z-reading", user: "Juan Cruz", timestamp: "2026-04-24T21:45:00", details: "Z-Reading generated for 2026-04-24", requiredRole: "admin" },
-  { id: "a9", action: "settings-change", user: "Admin", timestamp: "2026-04-24T09:30:00", details: "Updated BIR accreditation number", requiredRole: "admin" },
-  { id: "a10", action: "x-reading", user: "Juan Cruz", timestamp: "2026-04-24T15:00:00", details: "X-Reading snapshot taken", requiredRole: "cashier" },
-  { id: "a11", action: "logout", user: "Maria Santos", timestamp: "2026-04-24T22:30:00", details: "User logged out", requiredRole: "cashier" },
-  { id: "a12", action: "void", user: "Juan Cruz", timestamp: "2026-04-23T16:20:00", details: "Voided OR #49810 - Wrong item scanned", requiredRole: "supervisor" },
-  { id: "a13", action: "scpwd-apply", user: "Maria Santos", timestamp: "2026-04-25T10:15:00", details: "Applied SC discount — ID: SC-2024-001234, Customer: Juan dela Cruz", requiredRole: "cashier" },
-  { id: "a14", action: "scpwd-override", user: "Juan Cruz", timestamp: "2026-04-25T10:20:00", details: "Supervisor override removed SC discount — Reason: ID mismatch", requiredRole: "supervisor" },
-  { id: "a15", action: "scpwd-remove", user: "Maria Santos", timestamp: "2026-04-25T11:05:00", details: "Removed SC discount from current cart", requiredRole: "cashier" },
-];
-
-const mockPrinterLog: PrinterActivityLog[] = [
-  { id: "p1", orNumber: 49920, jobType: "receipt", timestamp: "2026-04-25T14:32:00", printerUsed: "Counter 1 Printer", status: "success" },
-  { id: "p2", orNumber: 49919, jobType: "receipt", timestamp: "2026-04-25T14:28:00", printerUsed: "Counter 1 Printer", status: "success" },
-  { id: "p3", orNumber: 49918, jobType: "void-receipt", timestamp: "2026-04-25T13:16:00", printerUsed: "Counter 1 Printer", status: "success" },
-  { id: "p4", jobType: "x-reading", timestamp: "2026-04-25T14:30:00", printerUsed: "Report Printer", status: "failed", failureReason: "Printer offline" },
-  { id: "p5", orNumber: 49917, jobType: "receipt", timestamp: "2026-04-25T12:50:00", printerUsed: "Counter 1 Printer", status: "failed", failureReason: "Paper jam" },
-  { id: "p6", orNumber: 49915, jobType: "reprint", timestamp: "2026-04-25T12:45:00", printerUsed: "Counter 1 Printer", status: "success" },
-  { id: "p7", jobType: "z-reading", timestamp: "2026-04-24T21:46:00", printerUsed: "Report Printer", status: "success" },
-  { id: "p8", jobType: "daily-summary", timestamp: "2026-04-24T22:00:00", printerUsed: "Report Printer", status: "success" },
-];
 
 const ACTION_OPTIONS: { value: AuditActionType | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -87,9 +59,61 @@ function formatTimestamp(ts: string): string {
   });
 }
 
+export async function logAuditEvent(
+  action: AuditActionType,
+  user: string,
+  details: string,
+  requiredRole: AuditEntry["requiredRole"] = "cashier",
+  reportType?: string
+): Promise<void> {
+  const entry: AuditEntry = {
+    id: crypto.randomUUID(),
+    action,
+    user,
+    timestamp: new Date().toISOString(),
+    details,
+    reportType,
+    requiredRole,
+  };
+  await putOne("auditLog", entry);
+}
+
+export async function logPrinterActivity(
+  log: Omit<PrinterActivityLog, "id">
+): Promise<void> {
+  await putOne("printerActivity", { ...log, id: crypto.randomUUID() });
+}
+
 export function AuditTrailPanel() {
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+  const [printerLog, setPrinterLog] = useState<PrinterActivityLog[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const [logs, printerEntries] = await Promise.all([
+      getAll("auditLog") as Promise<AuditEntry[]>,
+      getAll("printerActivity") as Promise<PrinterActivityLog[]>,
+    ]);
+    // Sort by timestamp descending
+    setAuditLog(logs.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+    setPrinterLog(printerEntries.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
   // Z-Reading alert
-  const [showZAlert, setShowZAlert] = useState<boolean>(true);
+  const [showZAlert, setShowZAlert] = useState<boolean>(false);
+
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const hasZToday = auditLog.some(
+      (e) => e.action === "z-reading" && e.timestamp.startsWith(today)
+    );
+    setShowZAlert(!hasZToday && loaded);
+  }, [auditLog, loaded]);
 
   // Sub-tab
   const [activeTab, setActiveTab] = useState<"audit" | "printer">("audit");
@@ -101,7 +125,7 @@ export function AuditTrailPanel() {
   const [userFilter, setUserFilter] = useState("All");
 
   const filteredAuditLog = useMemo(() => {
-    return mockAuditLog.filter((entry) => {
+    return auditLog.filter((entry) => {
       if (actionFilter !== "all" && entry.action !== actionFilter) return false;
       if (userFilter !== "All" && entry.user !== userFilter) return false;
       if (dateFrom) {
@@ -114,20 +138,20 @@ export function AuditTrailPanel() {
       }
       return true;
     });
-  }, [actionFilter, userFilter, dateFrom, dateTo]);
+  }, [auditLog, actionFilter, userFilter, dateFrom, dateTo]);
 
   return (
     <section className="panel" style={{ display: "grid", gap: 14 }}>
       {/* Z-Reading Missed Alert */}
       {showZAlert && (
         <div className="zreading-alert-banner">
-          <span>⚠ Z-Reading has not been generated today. Cutoff: 11:59 PM</span>
+          <span>Z-Reading has not been generated today. Cutoff: 11:59 PM</span>
           <button
             className="dismiss-btn"
             onClick={() => setShowZAlert(false)}
             aria-label="Dismiss alert"
           >
-            ✕
+            x
           </button>
         </div>
       )}
@@ -195,13 +219,8 @@ export function AuditTrailPanel() {
                 ))}
               </select>
             </label>
-            <button
-              className="primary"
-              onClick={() => {
-                /* filters are already reactive via useMemo */
-              }}
-            >
-              Apply Filter
+            <button className="primary" onClick={refresh}>
+              Refresh
             </button>
           </div>
 
@@ -218,7 +237,14 @@ export function AuditTrailPanel() {
                 </tr>
               </thead>
               <tbody>
-                {filteredAuditLog.map((entry) => (
+                {!loaded && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
+                      Loading audit entries...
+                    </td>
+                  </tr>
+                )}
+                {loaded && filteredAuditLog.map((entry) => (
                   <tr key={entry.id}>
                     <td>{formatTimestamp(entry.timestamp)}</td>
                     <td>{entry.user}</td>
@@ -235,7 +261,7 @@ export function AuditTrailPanel() {
                     </td>
                   </tr>
                 ))}
-                {filteredAuditLog.length === 0 && (
+                {loaded && filteredAuditLog.length === 0 && (
                   <tr>
                     <td colSpan={5} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
                       No audit entries match the current filters.
@@ -263,7 +289,14 @@ export function AuditTrailPanel() {
               </tr>
             </thead>
             <tbody>
-              {mockPrinterLog.map((entry) => (
+              {!loaded && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
+                    Loading printer activity...
+                  </td>
+                </tr>
+              )}
+              {loaded && printerLog.map((entry) => (
                 <tr key={entry.id}>
                   <td>{formatTimestamp(entry.timestamp)}</td>
                   <td>
@@ -283,6 +316,13 @@ export function AuditTrailPanel() {
                   </td>
                 </tr>
               ))}
+              {loaded && printerLog.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
+                    No printer activity recorded.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

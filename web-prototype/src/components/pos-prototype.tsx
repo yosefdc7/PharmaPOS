@@ -12,6 +12,7 @@ import { PrinterStatusIndicator } from "./printer-status";
 import { ReprintQueue } from "./reprint-queue";
 import { PrintFailureModal } from "./print-failure-modal";
 import { ReceiptPreview } from "./receipt-preview";
+import { PrinterService, createPrinterBackend, buildReceipt, enqueuePrintJob } from "@/lib/printer";
 import { ScpwdDiscountModal } from "./scpwd-discount-modal";
 import { ScpwdBreakdownCard } from "./scpwd-breakdown-card";
 import { ScpwdEligibilityWarning } from "./scpwd-eligibility-warning";
@@ -106,7 +107,6 @@ export function PosPrototype() {
   const [paymentReference, setPaymentReference] = useState("");
   const [holdReference, setHoldReference] = useState("");
   const [showReprintQueue, setShowReprintQueue] = useState(false);
-  const [showPrintFailure, setShowPrintFailure] = useState(false);
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
   const [receiptVariant, setReceiptVariant] = useState<"normal" | "void" | "reprint">("normal");
   const [showScPwdModal, setShowScPwdModal] = useState(false);
@@ -174,10 +174,13 @@ export function PosPrototype() {
     return (
       <main className="boot-screen">
         <section className="login-card">
-          <h1>PharmaSpot Web POS</h1>
-          <p>Choose a seeded demo user to enter the prototype.</p>
-          <button onClick={() => store.login("admin")}>Enter as admin</button>
-          <button onClick={() => store.login("cashier")}>Enter as cashier</button>
+          <h1>PharmaPOS PH Web POS</h1>
+          <p>Enter credentials to log in.</p>
+          <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await store.login(String(fd.get("username")), String(fd.get("password"))); }}>
+            <input name="username" placeholder="Username" defaultValue="admin" />
+            <input name="password" type="password" placeholder="Password" defaultValue="admin" />
+            <button type="submit">Log in</button>
+          </form>
         </section>
       </main>
     );
@@ -240,18 +243,18 @@ export function PosPrototype() {
               aria-label={navOpen ? "Collapse sidebar" : "Expand sidebar"}
               onClick={() => setNavOpen((current) => !current)}
             >
-              {navOpen ? "‹" : "›"}
+              {navOpen ? "â€¹" : "â€º"}
             </button>
             <div>
               <h1>{views.find((item) => item.key === view)?.label}</h1>
-              <p>{store.online ? "Online-ready" : "Offline mode"} with local IndexedDB writes</p>
+              <p>{store.online ? "Online-ready" : "Offline mode"} with SQLite backend</p>
             </div>
           </div>
           <div className="topbar-actions">
             <PrinterStatusIndicator />
             <label className="select-label">
               User
-              <select value={store.currentUser.username} onChange={(event) => store.login(event.target.value)}>
+              <select value={store.currentUser.username} onChange={(event) => store.switchUser(event.target.value)}>
                 {store.users.map((user) => (
                   <option key={user.id} value={user.username}>
                     {user.fullname}
@@ -293,30 +296,30 @@ export function PosPrototype() {
               </div>
               <div className="product-grid">
                 {filteredProducts.map((product) => (
-                    <button
-                      key={product.id}
-                      className={`product-card ${isLowStock(product) ? "low" : ""}`}
-                      onClick={() => store.addToCart(product)}
-                    >
-                      <span className="product-image" style={{ background: product.imageColor }}>
-                        {product.name.slice(0, 2).toUpperCase()}
+                  <button
+                    key={product.id}
+                    className={`product-card ${isLowStock(product) ? "low" : ""}`}
+                    onClick={() => store.addToCart(product)}
+                  >
+                    <span className="product-image" style={{ background: product.imageColor }}>
+                      {product.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div className="product-body">
+                      <strong className="product-name">{product.name}</strong>
+                      <span className={`badge ${getDrugClassBadge(product.drugClassification).className}`}>
+                        {getDrugClassBadge(product.drugClassification).label}
                       </span>
-                      <div className="product-body">
-                        <strong className="product-name">{product.name}</strong>
-                        <span className={`badge ${getDrugClassBadge(product.drugClassification).className}`}>
-                          {getDrugClassBadge(product.drugClassification).label}
-                        </span>
-                        <div className="product-meta">
-                          <div className="product-copy">
-                            <span className="product-sku">SKU {product.barcode}</span>
-                            <span className="product-stock">{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
-                          </div>
-                          <div className="product-pricing">
-                            <span className="product-price">{formatCurrency(symbol, product.price)}</span>
-                          </div>
+                      <div className="product-meta">
+                        <div className="product-copy">
+                          <span className="product-sku">SKU {product.barcode}</span>
+                          <span className="product-stock">{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
+                        </div>
+                        <div className="product-pricing">
+                          <span className="product-price">{formatCurrency(symbol, product.price)}</span>
                         </div>
                       </div>
-                    </button>
+                    </div>
+                  </button>
                 ))}
               </div>
             </section>
@@ -362,7 +365,7 @@ export function PosPrototype() {
                     className={store.activeScPwdDiscount ? "active" : ""}
                     onClick={() => setShowScPwdModal(true)}
                   >
-                    {store.activeScPwdDiscount ? "SC/PWD Active — Edit" : "Apply SC/PWD Discount"}
+                    {store.activeScPwdDiscount ? "SC/PWD Active â€” Edit" : "Apply SC/PWD Discount"}
                   </button>
                 </div>
               )}
@@ -531,11 +534,33 @@ export function PosPrototype() {
         </div>
       ) : null}
 
-      {showPrintFailure ? (
+      {store.printFailure ? (
         <PrintFailureModal
-          onClose={() => setShowPrintFailure(false)}
-          onRetry={() => {}}
-          onSkip={() => setShowPrintFailure(false)}
+          onClose={() => store.clearPrintFailure()}
+          onRetry={async () => {
+            const failure = store.printFailure;
+            if (!failure) return;
+            const { transaction, printer } = failure;
+            if (!printer || !transaction) return;
+            const service = new PrinterService(createPrinterBackend);
+            const connectResult = await service.connect(printer);
+            if (connectResult.status === "success") {
+              const commands = buildReceipt("normal", printer, undefined, transaction);
+              const printResult = await service.print(commands);
+              await service.disconnect();
+              if (printResult.status === "success") {
+                store.clearPrintFailure();
+              } else {
+                await enqueuePrintJob(Number(transaction.localNumber), transaction.id, commands, printer.id);
+              }
+            } else {
+              await enqueuePrintJob(Number(transaction.localNumber), transaction.id, new Uint8Array(0), printer.id);
+            }
+          }}
+          onSkip={() => {
+            // Digital receipt is already shown via lastReceipt drawer
+            store.clearPrintFailure();
+          }}
         />
       ) : null}
 
@@ -827,10 +852,10 @@ function ProductsView({
 
   function renderSortSymbol(columnKey: InventorySortKey) {
     if (sortKey !== columnKey) {
-      return "↕";
+      return "â†•";
     }
 
-    return sortDirection === "asc" ? "↑" : "↓";
+    return sortDirection === "asc" ? "â†‘" : "â†“";
   }
 
   return (
@@ -1822,8 +1847,8 @@ function SyncView({
         <article className="metric"><span>Order throughput</span><strong>{snapshot.orderThroughputPerHour}/hr</strong></article>
       </div>
       <p>
-        SLOs: lag ≤{sloTargets.maxSyncLagSeconds}s, queue ≤{sloTargets.maxQueueDepth}, failed mutations ≤{sloTargets.maxFailedMutationsPer15m}/15m,
-        payment failures ≤{(sloTargets.maxPaymentFailureRate * 100).toFixed(1)}%, offline ≤{sloTargets.maxOfflineDurationSeconds}s, throughput ≥
+        SLOs: lag â‰¤{sloTargets.maxSyncLagSeconds}s, queue â‰¤{sloTargets.maxQueueDepth}, failed mutations â‰¤{sloTargets.maxFailedMutationsPer15m}/15m,
+        payment failures â‰¤{(sloTargets.maxPaymentFailureRate * 100).toFixed(1)}%, offline â‰¤{sloTargets.maxOfflineDurationSeconds}s, throughput â‰¥
         {sloTargets.minOrdersPerHour}/hr.
       </p>
       <DataPanel title="Active alerts">
