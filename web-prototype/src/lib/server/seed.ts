@@ -3,49 +3,54 @@ import type { Client } from "@libsql/client";
 
 const SALT_ROUNDS = 10;
 
+const ADMIN_PERMS = JSON.stringify({
+  products: true, categories: true, customers: true, transactions: true,
+  rx: true, controlTower: true, users: true, settings: true,
+  reports: true, sync: true, void: true, refund: true, override: true,
+  xReading: true, zReadingGenerate: true, zReadingView: true,
+});
+
+const SUPERVISOR_PERMS = JSON.stringify({
+  products: false, categories: false, customers: true, transactions: true,
+  rx: false, controlTower: false, users: false, settings: false,
+  reports: true, sync: false, void: true, refund: true, override: true,
+  xReading: true, zReadingGenerate: false, zReadingView: true,
+});
+
+const PHARMACIST_PERMS = JSON.stringify({
+  products: false, categories: false, customers: true, transactions: true,
+  rx: true, controlTower: false, users: false, settings: false,
+  reports: false, sync: false, void: false, refund: false, override: false,
+  xReading: false, zReadingGenerate: false, zReadingView: false,
+});
+
+const CASHIER_PERMS = JSON.stringify({
+  products: false, categories: false, customers: true, transactions: true,
+  rx: false, controlTower: false, users: false, settings: false,
+  reports: false, sync: false, void: false, refund: false, override: false,
+  xReading: false, zReadingGenerate: false, zReadingView: false,
+});
+
 export async function seedDatabase(db: Client): Promise<boolean> {
-  // Check if already seeded
   const metaResult = await db.execute({
     sql: "SELECT value FROM _meta WHERE id = ?",
     args: ["seeded"],
   });
 
   if (metaResult.rows.length > 0) {
-    return false; // already seeded
+    return false;
   }
 
-  // Categories
   await db.batch([
-    {
-      sql: "INSERT INTO categories (id, name) VALUES (?, ?)",
-      args: ["cat-pain", "Pain Relief"],
-    },
-    {
-      sql: "INSERT INTO categories (id, name) VALUES (?, ?)",
-      args: ["cat-cold", "Cold & Flu"],
-    },
-    {
-      sql: "INSERT INTO categories (id, name) VALUES (?, ?)",
-      args: ["cat-vitamins", "Vitamins"],
-    },
-    {
-      sql: "INSERT INTO categories (id, name) VALUES (?, ?)",
-      args: ["cat-first-aid", "First Aid"],
-    },
+    { sql: "INSERT INTO categories (id, name) VALUES (?, ?)", args: ["cat-pain", "Pain Relief"] },
+    { sql: "INSERT INTO categories (id, name) VALUES (?, ?)", args: ["cat-cold", "Cold & Flu"] },
+    { sql: "INSERT INTO categories (id, name) VALUES (?, ?)", args: ["cat-vitamins", "Vitamins"] },
+    { sql: "INSERT INTO categories (id, name) VALUES (?, ?)", args: ["cat-first-aid", "First Aid"] },
   ]);
 
-  // Products
   const now = new Date();
-  const amoxExpiry = (() => {
-    const d = new Date(now);
-    d.setDate(d.getDate() + 10);
-    return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
-  })();
-  const cephExpiry = (() => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 2);
-    return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
-  })();
+  const amoxExpiry = (() => { const d = new Date(now); d.setDate(d.getDate() + 10); return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`; })();
+  const cephExpiry = (() => { const d = new Date(now); d.setDate(d.getDate() - 2); return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`; })();
 
   const products = [
     ["prd-para-500", "Paracetamol 500mg", "100001", "cat-pain", "HealthSource", 4.5, null, null, 42, 10, 1, "2027-08-31", "#5433FF", 0, "medicine", 0, 0, null, null, null, null, null, null, null, null, null],
@@ -61,7 +66,7 @@ export async function seedDatabase(db: Client): Promise<boolean> {
     ["prd-lancets", "Blood Lancets 100s", "100011", "cat-first-aid", "MediSupply", 18.0, null, null, 20, 5, 1, "2030-06-15", "#3498DB", 0, "non-medicine", 1, 0, null, null, null, null, null, null, null, null, null],
   ] as const;
 
-  const productInserts = products.map((p) => ({
+  await db.batch(products.map((p) => ({
     sql: `INSERT INTO products (id, name, barcode, category_id, supplier, price, original_price, cost,
            quantity, min_stock, tracks_stock, expiration_date, image_color, featured,
            sc_pwd_eligibility, vat_exempt, is_prescription, drug_classification, generic_name,
@@ -69,97 +74,36 @@ export async function seedDatabase(db: Client): Promise<boolean> {
            behind_counter, dd_last_reconciliation_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [...p],
-  }));
+  })) as any);
 
-  await db.batch(productInserts as any);
-
-  // Customers
   const isoNow = now.toISOString();
   await db.batch([
-    {
-      sql: "INSERT INTO customers (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)",
-      args: ["walk-in", "Walk in customer", "", "", isoNow],
-    },
-    {
-      sql: "INSERT INTO customers (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)",
-      args: ["cus-ana", "Ana Reyes", "+63 900 111 2222", "ana@example.com", isoNow],
-    },
-    {
-      sql: "INSERT INTO customers (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)",
-      args: ["cus-lee", "Marcus Lee", "+63 900 333 4444", "marcus@example.com", isoNow],
-    },
+    { sql: "INSERT INTO customers (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)", args: ["walk-in", "Walk in customer", "", "", isoNow] },
+    { sql: "INSERT INTO customers (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)", args: ["cus-ana", "Ana Reyes", "+63 900 111 2222", "ana@example.com", isoNow] },
+    { sql: "INSERT INTO customers (id, name, phone, email, created_at) VALUES (?, ?, ?, ?, ?)", args: ["cus-lee", "Marcus Lee", "+63 900 333 4444", "marcus@example.com", isoNow] },
   ]);
 
-  // Users (with bcrypt hashed passwords)
   const adminHash = await bcrypt.hash("admin", SALT_ROUNDS);
+  const supervisorHash = await bcrypt.hash("supervisor", SALT_ROUNDS);
+  const pharmacistHash = await bcrypt.hash("pharmacist", SALT_ROUNDS);
   const cashierHash = await bcrypt.hash("cashier", SALT_ROUNDS);
 
   await db.batch([
-    {
-      sql: "INSERT INTO users (id, username, fullname, password_hash, role, permissions, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [
-        "usr-admin",
-        "admin",
-        "Administrator",
-        adminHash,
-        "admin",
-        JSON.stringify({ products: true, categories: true, transactions: true, users: true, settings: true }),
-        "",
-      ],
-    },
-    {
-      sql: "INSERT INTO users (id, username, fullname, password_hash, role, permissions, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [
-        "usr-cashier",
-        "cashier",
-        "Store Cashier",
-        cashierHash,
-        "cashier",
-        JSON.stringify({ products: false, categories: false, transactions: true, users: false, settings: false }),
-        "",
-      ],
-    },
+    { sql: "INSERT INTO users (id, username, fullname, password_hash, role, permissions, status) VALUES (?, ?, ?, ?, ?, ?, ?)", args: ["usr-admin", "admin", "Administrator", adminHash, "admin", ADMIN_PERMS, ""] },
+    { sql: "INSERT INTO users (id, username, fullname, password_hash, role, permissions, status) VALUES (?, ?, ?, ?, ?, ?, ?)", args: ["usr-supervisor", "supervisor", "Shift Supervisor", supervisorHash, "supervisor", SUPERVISOR_PERMS, ""] },
+    { sql: "INSERT INTO users (id, username, fullname, password_hash, role, permissions, status) VALUES (?, ?, ?, ?, ?, ?, ?)", args: ["usr-pharmacist", "pharmacist", "Staff Pharmacist", pharmacistHash, "pharmacist", PHARMACIST_PERMS, ""] },
+    { sql: "INSERT INTO users (id, username, fullname, password_hash, role, permissions, status) VALUES (?, ?, ?, ?, ?, ?, ?)", args: ["usr-cashier", "cashier", "Store Cashier", cashierHash, "cashier", CASHIER_PERMS, ""] },
   ]);
 
-  // Settings
   await db.execute({
     sql: `INSERT INTO settings (id, store, address_one, address_two, contact, currency_symbol,
            vat_percentage, charge_tax, quick_billing, receipt_footer, expiry_alert_days, sc_pwd_settings)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      "store",
-      "PharmaPOS PH Demo",
-      "123 Main Street",
-      "Makati City",
-      "+63 2 555 0199",
-      "$",
-      12,
-      1,
-      0,
-      "Thank you for choosing PharmaPOS PH.",
-      30,
-      JSON.stringify({
-        enabled: true,
-        discountRate: 20,
-        vatRegistered: true,
-        defaultMedicineEligibility: "medicine",
-        duplicateIdThreshold: 2,
-        dailyAlertThreshold: 5,
-      }),
-    ],
+    args: ["store", "PharmaPOS PH Demo", "123 Main Street", "Makati City", "+63 2 555 0199", "$", 12, 1, 0, "Thank you for choosing PharmaPOS PH.", 30, JSON.stringify({ enabled: true, discountRate: 20, vatRegistered: true, defaultMedicineEligibility: "medicine", duplicateIdThreshold: 2, dailyAlertThreshold: 5 })],
   });
 
-  // Mark as seeded
-  await db.execute({
-    sql: "INSERT INTO _meta (id, value) VALUES (?, ?)",
-    args: ["seeded", JSON.stringify(true)],
-  });
-
-  // Seed feature flags (all off by default)
-  await db.execute({
-    sql: "INSERT INTO _meta (id, value) VALUES (?, ?)",
-    args: ["featureFlags", JSON.stringify({ sync: false, payments: false, refunds: false })],
-  });
+  await db.execute({ sql: "INSERT INTO _meta (id, value) VALUES (?, ?)", args: ["seeded", JSON.stringify(true)] });
+  await db.execute({ sql: "INSERT INTO _meta (id, value) VALUES (?, ?)", args: ["featureFlags", JSON.stringify({ sync: false, payments: false, refunds: false })] });
 
   return true;
 }

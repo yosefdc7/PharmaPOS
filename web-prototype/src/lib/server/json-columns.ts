@@ -8,7 +8,7 @@ const JSON_COLUMNS: Record<string, string[]> = {
   settings: ["sc_pwd_settings"],
   transactions: ["items", "sc_pwd_metadata"],
   held_orders: ["items", "sc_pwd_draft"],
-  sync_queue: ["payload"],
+  sync_queue: ["payload", "resolved_conflict"],
   _meta: ["value"],
 };
 

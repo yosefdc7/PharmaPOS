@@ -25,15 +25,17 @@ import type {
   SyncQueueItem,
   Transaction,
   User,
+  UserRole,
   StoragePersistenceStatus,
   XReading,
   ZReading,
   PrescriptionDraft,
-  RxSettings
+  RxSettings,
+  SupervisorAck
 } from "./types";
 
 const DB_NAME = "pharmaspot-web-prototype";
-const DB_VERSION = 5;
+const DB_VERSION = 7;
 const SESSION_KEY = "pharmapos.auth.session";
 const AUTO_LOGIN_SUPPRESS_KEY = "pharmapos.auth.suppressAutoLogin";
 const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -45,7 +47,7 @@ export type LocalUserUpsert = {
   id?: string;
   username: string;
   fullname: string;
-  role: "admin" | "cashier";
+  role: User["role"];
   permissions: Record<PermissionKey, boolean>;
   password?: string;
 };
@@ -68,7 +70,8 @@ export type StoreName =
   | "rxSettings"
   | "xReadings"
   | "zReadings"
-  | "reprintQueue";
+  | "reprintQueue"
+  | "supervisorAcks";
 
 const STORES: StoreName[] = [
   "meta",
@@ -88,7 +91,8 @@ const STORES: StoreName[] = [
   "rxSettings",
   "xReadings",
   "zReadings",
-  "reprintQueue"
+  "reprintQueue",
+  "supervisorAcks"
 ];
 
 type StoreEntityMap = {
@@ -110,6 +114,7 @@ type StoreEntityMap = {
   xReadings: XReading;
   zReadings: ZReading;
   reprintQueue: ReprintQueueItem;
+  supervisorAcks: SupervisorAck;
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -210,6 +215,29 @@ function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number
   if (oldVersion < 5) {
     tx.objectStore("meta").put({ id: "schemaVersion", value: 5 });
   }
+
+  // V6: add supervisorAcks store for role-based permissions
+  if (oldVersion < 6) {
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 6 });
+  }
+
+  // V7: add entityVersion and resolvedConflict to syncQueue items
+  if (oldVersion < 7) {
+    const syncStore = tx.objectStore("syncQueue");
+    const cursor = syncStore.openCursor();
+    cursor.onsuccess = (event) => {
+      const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
+      if (result) {
+        const value = result.value as SyncQueueItem;
+        if (typeof value.entityVersion !== "number") {
+          value.entityVersion = 1;
+          syncStore.put(value);
+        }
+        result.continue();
+      }
+    };
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 7 });
+  }
 }
 
 export function openPosDb(): Promise<IDBDatabase> {
@@ -283,6 +311,8 @@ async function getStoredUser(id: string): Promise<StoredUser | undefined> {
 function defaultPasswordForUser(user: User): string {
   if (user.username === "admin") return "admin";
   if (user.username === "cashier") return "cashier";
+  if (user.username === "supervisor") return "supervisor";
+  if (user.username === "pharmacist") return "pharmacist";
   return user.username;
 }
 
@@ -362,18 +392,52 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<Fea
 }
 
 export async function enqueueSync(
-  item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError">
+  item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError" | "entityVersion">
 ): Promise<SyncQueueItem> {
+  const storeName = ENTITY_STORE_MAP[item.entity];
+  let entityVersion = 1;
+
+  if (storeName && item.operation !== "create") {
+    const entityId = getEntityIdForSync(item.payload);
+    if (entityId) {
+      const existing = await getOne(storeName as StoreName, entityId).catch(() => undefined);
+      if (existing && "version" in existing) {
+        entityVersion = (existing as Record<string, number>).version + 1;
+      }
+    }
+  }
+
   const syncItem: SyncQueueItem = {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     status: "pending",
     retryCount: 0,
     lastError: "",
+    entityVersion,
     ...item
   };
   await putOne("syncQueue", syncItem);
   return syncItem;
+}
+
+const ENTITY_STORE_MAP: Record<SyncQueueItem["entity"], string> = {
+  product: "products",
+  category: "categories",
+  customer: "customers",
+  user: "users",
+  settings: "settings",
+  transaction: "transactions",
+  "held-order": "heldOrders",
+};
+
+function getEntityIdForSync(payload: unknown): string | undefined {
+  if (typeof payload === "object" && payload !== null && "id" in payload) {
+    return (payload as Record<string, unknown>).id as string;
+  }
+  if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] === "object" && payload[0] !== null && "id" in payload[0]) {
+    return (payload[0] as Record<string, unknown>).id as string;
+  }
+  return undefined;
 }
 
 export async function markPendingSyncAsSynced(): Promise<void> {
@@ -390,6 +454,11 @@ export async function markPendingSyncAsSynced(): Promise<void> {
       transaction.syncStatus === "pending" ? { ...transaction, syncStatus: "synced" } : transaction
     )
   );
+}
+
+export async function getConflictItems(): Promise<SyncQueueItem[]> {
+  const queue = await getAll("syncQueue");
+  return queue.filter((item) => item.status === "conflict");
 }
 
 export function readSession(): AuthSession | null {
@@ -536,6 +605,26 @@ export async function seedIfNeeded(): Promise<void> {
   await putOne("meta", { id: "seeded", value: true });
 }
 
+export async function acknowledgeOverride(
+  actionType: SupervisorAck["actionType"],
+  supervisorId: string,
+  supervisorName: string,
+  reason: string,
+  targetId?: string,
+): Promise<SupervisorAck> {
+  const ack: SupervisorAck = {
+    id: `ack-${crypto.randomUUID()}`,
+    actionType,
+    supervisorId,
+    supervisorName,
+    reason,
+    targetId,
+    createdAt: new Date().toISOString(),
+  };
+  await putOne("supervisorAcks", ack);
+  return ack;
+}
+
 export async function resetPrototypeData(): Promise<void> {
   const db = await openPosDb();
   const tx = db.transaction(STORES, "readwrite");
@@ -544,6 +633,38 @@ export async function resetPrototypeData(): Promise<void> {
   }
   await completeTransaction(tx);
   await seedIfNeeded();
+}
+
+/**
+ * Atomically write sale data across multiple stores.
+ * All writes succeed or all fail together.
+ */
+export async function atomicSaleWrite(
+  products: Product[],
+  transaction: Transaction,
+  birSettings: (BirSettings & { id: string }) | null
+): Promise<void> {
+  const storeNames: StoreName[] = ["products", "transactions"];
+  if (birSettings) storeNames.push("birSettings");
+
+  const db = await openPosDb();
+  const tx = db.transaction(storeNames, "readwrite");
+
+  // Update stock for all products
+  const productStore = tx.objectStore("products");
+  for (const product of products) {
+    productStore.put(product);
+  }
+
+  // Save transaction
+  tx.objectStore("transactions").put(transaction);
+
+  // Update BIR settings (OR number increment)
+  if (birSettings) {
+    tx.objectStore("birSettings").put(birSettings);
+  }
+
+  await completeTransaction(tx);
 }
 
 export async function resetPosDbForTests(): Promise<void> {

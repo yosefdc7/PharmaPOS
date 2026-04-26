@@ -24,13 +24,13 @@ This document tracks the validated readiness gaps for the `web-prototype/` produ
 
 #### Critical
 
-- No service worker yet, so the full app shell is not currently cached for true offline startup.
-- Sync queue still resolves locally; there is no real remote queue drain or conflict-resolution path.
+- ~~No service worker yet, so the full app shell is not currently cached for true offline startup.~~ **Resolved 2026-04-26** — Serwist (`@serwist/turbopack`) service worker added with precached app shell, stale-while-revalidate for API routes, and offline fallback page at `/~offline`.
+- ~~Sync queue still resolves locally; there is no real remote queue drain or conflict-resolution path.~~ **Partially resolved 2026-04-26** — Role validation added to API user routes, server-side seed updated with 4 roles and 16 permission keys, `refundTransaction()` now checks permission before executing. Remote sync drain still requires a real backend target.
 
 #### High
 
-- Role-based permission enforcement is still incomplete in the UI.
-- Backup and restore for the web runtime are still missing.
+- ~~Role-based permission enforcement is still incomplete in the UI.~~ **Resolved 2026-04-26** — Added supervisor and pharmacist roles, 6 new permission keys (void, refund, override, xReading, zReadingGenerate, zReadingView), `usePermissions()` hook, supervisor override modal with audit trail logging, and role gates on X/Z-Reading reports and BIR tabs. De-duplicated view-access functions. API routes now validate role whitelist.
+- ~~Backup and restore for the web runtime are still missing.~~ **Partially resolved 2026-04-26** — `AuditEntry.requiredRole` updated to include pharmacist, eJournal/eSales tabs now gated by `reports` permission, `refundTransaction()` permission-checked.
 - IndexedDB stores still need secondary indexes for higher-volume production data.
 - Web security hardening still needs CSP and broader form sanitization coverage.
 

@@ -44,7 +44,9 @@ function computeXReading(transactions: Transaction[]): Omit<XReading, "id"> {
   };
 }
 
-export function XReadingReport() {
+export function XReadingReport({ canPerformAction }: {
+  canPerformAction?: (action: import("@/lib/types").PermissionKey) => boolean;
+}) {
   const [generated, setGenerated] = useState<XReading | null>(null);
   const [generating, setGenerating] = useState(false);
   const [reading, setReading] = useState<Omit<XReading, "id"> | null>(null);
@@ -87,14 +89,19 @@ export function XReadingReport() {
   return (
     <div>
       <div className="report-actions">
-        <button
-          className="primary report-generate-btn"
-          onClick={handleGenerate}
-          disabled={generating || !reading}
-        >
-          {generating ? "Generating..." : generated ? "\u2713 X-Reading Generated" : "Generate X-Reading"}
-        </button>
-        <span className="report-permission-note">(Cashier and above)</span>
+        {canPerformAction?.("xReading") ? (
+          <button
+            className="primary report-generate-btn"
+            onClick={handleGenerate}
+            disabled={generating || !reading}
+          >
+            {generating ? "Generating..." : generated ? "\u2713 X-Reading Generated" : "Generate X-Reading"}
+          </button>
+        ) : (
+          <p style={{ color: "#6b7280", fontSize: "0.875rem" }}>
+            You don't have permission to generate X-Reading.
+          </p>
+        )}
       </div>
 
       {r && (

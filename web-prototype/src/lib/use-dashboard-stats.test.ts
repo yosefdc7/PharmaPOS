@@ -32,7 +32,13 @@ const users: User[] = [
       users: true,
       settings: true,
       reports: true,
-      sync: true
+      sync: true,
+      void: true,
+      refund: true,
+      override: true,
+      xReading: true,
+      zReadingGenerate: true,
+      zReadingView: true,
     }
   }
 ];

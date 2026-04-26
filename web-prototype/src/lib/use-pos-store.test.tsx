@@ -3,7 +3,8 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { seedSettings, seedUsers } from "./seed";
-import { canUserAccessView, getAvailableViews, resolveAccessibleView, usePosStore } from "./use-pos-store";
+import { canUserAccessView, getAvailableViews, resolveAccessibleView } from "./use-permissions";
+import { usePosStore } from "./use-pos-store";
 
 const getAllMock = vi.fn();
 const getOneMock = vi.fn();
@@ -30,7 +31,8 @@ vi.mock("./db", () => ({
   saveLocalUserAccount: vi.fn(),
   seedIfNeeded: vi.fn(),
   shouldAutoLogin: () => shouldAutoLoginMock(),
-  writeSession: vi.fn()
+  writeSession: vi.fn(),
+  getConflictItems: vi.fn().mockResolvedValue([])
 }));
 
 function mockStoreCollections() {
@@ -111,14 +113,16 @@ describe("usePosStore boot flow", () => {
 
 describe("view authorization helpers", () => {
   it("limits cashier access to POS and Customers", () => {
-    expect(canUserAccessView(seedUsers[1], "pos")).toBe(true);
-    expect(canUserAccessView(seedUsers[1], "customers")).toBe(true);
-    expect(canUserAccessView(seedUsers[1], "products")).toBe(false);
-    expect(getAvailableViews(seedUsers[1])).toEqual(["pos", "customers"]);
+    const cashier = seedUsers.find((u) => u.role === "cashier")!;
+    expect(canUserAccessView(cashier, "pos")).toBe(true);
+    expect(canUserAccessView(cashier, "customers")).toBe(true);
+    expect(canUserAccessView(cashier, "products")).toBe(false);
+    expect(getAvailableViews(cashier)).toEqual(["pos", "customers"]);
   });
 
   it("allows admin access to every app view", () => {
-    expect(getAvailableViews(seedUsers[0])).toEqual([
+    const admin = seedUsers.find((u) => u.role === "admin")!;
+    expect(getAvailableViews(admin)).toEqual([
       "pos",
       "products",
       "customers",
@@ -131,7 +135,8 @@ describe("view authorization helpers", () => {
   });
 
   it("falls back to the first allowed view when a requested view is unauthorized", () => {
-    expect(resolveAccessibleView("settings", seedUsers[1])).toBe("pos");
-    expect(resolveAccessibleView("customers", seedUsers[1])).toBe("customers");
+    const cashier = seedUsers.find((u) => u.role === "cashier")!;
+    expect(resolveAccessibleView("settings", cashier)).toBe("pos");
+    expect(resolveAccessibleView("customers", cashier)).toBe("customers");
   });
 });

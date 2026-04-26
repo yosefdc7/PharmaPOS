@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
-import type { ScPwdAlert, ScPwdTransactionLogRow, ScPwdSummaryCard } from "@/lib/types";
+import type { PermissionKey, ScPwdAlert, ScPwdTransactionLogRow, ScPwdSummaryCard, User } from "@/lib/types";
 import { XReadingReport } from "./x-reading";
 import { ZReadingReport } from "./z-reading";
 import { EJournalExport } from "./ejournal-export";
@@ -10,11 +10,11 @@ import { ScpwdSummaryCardComponent } from "./scpwd-summary-card";
 
 type BirReportTab = "x-reading" | "z-reading" | "ejournal" | "esales" | "sc-pwd";
 
-const tabs: { key: BirReportTab; label: string }[] = [
-  { key: "x-reading", label: "X-Reading" },
-  { key: "z-reading", label: "Z-Reading" },
-  { key: "ejournal", label: "eJournal" },
-  { key: "esales", label: "eSales" },
+const allTabs: { key: BirReportTab; label: string; requiredPermission?: PermissionKey }[] = [
+  { key: "x-reading", label: "X-Reading", requiredPermission: "xReading" },
+  { key: "z-reading", label: "Z-Reading", requiredPermission: "zReadingView" },
+  { key: "ejournal", label: "eJournal", requiredPermission: "reports" },
+  { key: "esales", label: "eSales", requiredPermission: "reports" },
   { key: "sc-pwd", label: "SC/PWD" },
 ];
 
@@ -58,10 +58,32 @@ type BirReportsPanelProps = {
   scPwdTransactionLog?: ScPwdTransactionLogRow[];
   getScPwdSummary?: () => ScPwdSummaryCard;
   scPwdAlerts?: ScPwdAlert[];
+  canPerformAction?: (action: PermissionKey) => boolean;
+  users?: User[];
+  currentUser?: User | null;
+  acknowledgeOverride?: (
+    actionType: "void" | "refund" | "override" | "zReading",
+    supervisorId: string,
+    supervisorName: string,
+    reason: string,
+    targetId?: string,
+  ) => Promise<import("@/lib/types").SupervisorAck>;
 };
 
-export function BirReportsPanel({ scPwdTransactionLog = [], getScPwdSummary, scPwdAlerts = [] }: BirReportsPanelProps) {
+export function BirReportsPanel({
+  scPwdTransactionLog = [],
+  getScPwdSummary,
+  scPwdAlerts = [],
+  canPerformAction,
+  users,
+  currentUser,
+  acknowledgeOverride,
+}: BirReportsPanelProps) {
   const [tab, setTab] = useState<BirReportTab>("x-reading");
+  const tabs = allTabs.filter((t) => {
+    if (!t.requiredPermission) return true;
+    return canPerformAction?.(t.requiredPermission) ?? false;
+  });
   const summary = useMemo(() => getScPwdSummary?.() ?? {
     totalTransactions: 0,
     totalScTransactions: 0,
@@ -86,8 +108,15 @@ export function BirReportsPanel({ scPwdTransactionLog = [], getScPwdSummary, scP
           </button>
         ))}
       </div>
-      {tab === "x-reading" && <XReadingReport />}
-      {tab === "z-reading" && <ZReadingReport />}
+      {tab === "x-reading" && <XReadingReport canPerformAction={canPerformAction} />}
+      {tab === "z-reading" && (
+        <ZReadingReport
+          canPerformAction={canPerformAction}
+          users={users}
+          currentUser={currentUser}
+          acknowledgeOverride={acknowledgeOverride}
+        />
+      )}
       {tab === "ejournal" && <EJournalExport />}
       {tab === "esales" && <ESalesReport />}
       {tab === "sc-pwd" && (

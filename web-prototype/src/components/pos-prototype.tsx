@@ -3,7 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { isLowStock, isExpired, isNearExpiry, daysUntilExpiry, money } from "@/lib/calculations";
 import { resolveAccessibleView, usePosStore } from "@/lib/use-pos-store";
-import type { AppViewKey, BirSettings, Category, Customer, PaymentMethod, Product, Settings, User } from "@/lib/types";
+import { buildUserPermissions } from "@/lib/use-permissions";
+import type { AppViewKey, BirSettings, Category, Customer, PaymentMethod, Product, Settings, User, UserRole } from "@/lib/types";
 import { BirSettingsPanel } from "./bir-settings";
 import { PrinterSettingsPanel } from "./printer-settings";
 import { BirReportsPanel } from "./bir-reports";
@@ -92,22 +93,6 @@ function buildProductDraft(overrides?: Partial<Product>): Product {
     fdaCprNumber: overrides?.fdaCprNumber ?? "",
     behindCounter: overrides?.behindCounter ?? false,
     ddLastReconciliationAt: overrides?.ddLastReconciliationAt
-  };
-}
-
-function buildUserPermissions(role: User["role"]): User["permissions"] {
-  const admin = role === "admin";
-  return {
-    products: admin,
-    categories: admin,
-    customers: true,
-    transactions: true,
-    rx: admin,
-    controlTower: admin,
-    users: admin,
-    settings: admin,
-    reports: admin,
-    sync: admin,
   };
 }
 
@@ -508,9 +493,9 @@ export function PosPrototype() {
         ) : null}
 
         {activeView === "products" ? (
-          <ProductsView products={store.products} categories={store.categories} symbol={symbol} save={store.saveEntity} remove={store.removeEntity} alertDays={settings?.expiryAlertDays ?? 30} />
+          <ProductsView products={store.products} categories={store.categories} symbol={symbol} save={store.saveEntity} remove={store.removeEntity} canPerformAction={store.canPerformAction} alertDays={settings?.expiryAlertDays ?? 30} />
         ) : null}
-        {activeView === "customers" ? <CustomersView customers={store.customers} save={store.saveEntity} remove={store.removeEntity} /> : null}
+        {activeView === "customers" ? <CustomersView customers={store.customers} save={store.saveEntity} remove={store.removeEntity} canPerformAction={store.canPerformAction} /> : null}
         {activeView === "rx" ? (
           <RxWorkspace
             products={store.products}
@@ -536,6 +521,7 @@ export function PosPrototype() {
             saveUserAccount={store.saveUserAccount}
             remove={store.removeEntity}
             reset={store.resetData}
+            canPerformAction={store.canPerformAction}
             rxSettings={store.rxSettings ?? { ddEddLowStockThreshold: 10, profileRetentionYears: 10, hardBlockPrototypeReset: true }}
             updateRxSettings={(next) => store.updateRxSettings?.(next)}
           />
@@ -565,6 +551,10 @@ export function PosPrototype() {
             scPwdTransactionLog={store.scPwdTransactionLog}
             getScPwdSummary={store.getScPwdSummary}
             scPwdAlerts={store.scPwdAlerts}
+            canPerformAction={store.canPerformAction}
+            users={store.users}
+            currentUser={store.currentUser}
+            acknowledgeOverride={store.acknowledgeOverride}
           />
         ) : null}
         {activeView === "sync" ? (
@@ -576,6 +566,11 @@ export function PosPrototype() {
             snapshot={store.observabilitySnapshot}
             alerts={store.activeAlerts}
             sloTargets={store.sloTargets}
+            syncStrategy={store.syncStrategy}
+            setSyncStrategy={store.setSyncStrategy}
+            lastSyncReport={store.lastSyncReport}
+            conflictItems={store.conflictItems}
+            resolveConflict={store.resolveConflict}
           />
         ) : null}
       </section>
@@ -707,6 +702,7 @@ function ProductsView({
   symbol,
   save,
   remove,
+  canPerformAction,
   alertDays
 }: {
   products: Product[];
@@ -714,6 +710,7 @@ function ProductsView({
   symbol: string;
   save: ReturnType<typeof usePosStore>["saveEntity"];
   remove: ReturnType<typeof usePosStore>["removeEntity"];
+  canPerformAction: (action: import("@/lib/types").PermissionKey) => boolean;
   alertDays: number;
 }) {
   const [query, setQuery] = useState("");
@@ -875,6 +872,7 @@ function ProductsView({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canPerformAction("products")) return;
     const controlledClass =
       draft.drugClassification === "DD, Rx" ||
       draft.drugClassification === "EDD, Rx" ||
@@ -899,10 +897,12 @@ function ProductsView({
   }
 
   async function toggleFeatured(product: Product) {
+    if (!canPerformAction("products")) return;
     await save("products", { ...product, featured: !product.featured }, "product");
   }
 
   async function markExpired(product: Product) {
+    if (!canPerformAction("products")) return;
     await save("products", { ...product, quantity: 0 }, "product");
   }
 
@@ -1364,11 +1364,13 @@ function ProductsView({
 function CustomersView({
   customers,
   save,
-  remove
+  remove,
+  canPerformAction
 }: {
   customers: Customer[];
   save: ReturnType<typeof usePosStore>["saveEntity"];
   remove: ReturnType<typeof usePosStore>["removeEntity"];
+  canPerformAction: (action: import("@/lib/types").PermissionKey) => boolean;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [sortKey, setSortKey] = useState<CustomerSortKey>("newest");
@@ -1383,6 +1385,7 @@ function CustomersView({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canPerformAction("customers")) return;
     const data = readForm(event.currentTarget);
     await save(
       "customers",
@@ -1430,7 +1433,11 @@ function CustomersView({
             <span>{customer.phone || "No phone"}</span>
             <span>{customer.email || "No email"}</span>
             {customer.id !== "walk-in" ? (
-              <button className="danger" onClick={() => remove("customers", customer.id, "customer")}>
+              <button
+                className="danger"
+                disabled={!canPerformAction("customers")}
+                onClick={() => canPerformAction("customers") && remove("customers", customer.id, "customer")}
+              >
                 Delete
               </button>
             ) : null}
@@ -1486,6 +1493,7 @@ function SettingsView({
   saveUserAccount,
   remove,
   reset,
+  canPerformAction,
   rxSettings,
   updateRxSettings
 }: {
@@ -1496,6 +1504,7 @@ function SettingsView({
   saveUserAccount: ReturnType<typeof usePosStore>["saveUserAccount"];
   remove: ReturnType<typeof usePosStore>["removeEntity"];
   reset: ReturnType<typeof usePosStore>["resetData"];
+  canPerformAction: (action: import("@/lib/types").PermissionKey) => boolean;
   rxSettings: ReturnType<typeof usePosStore>["rxSettings"];
   updateRxSettings: ReturnType<typeof usePosStore>["updateRxSettings"];
 }) {
@@ -1512,6 +1521,7 @@ function SettingsView({
 
   async function submitSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canPerformAction("settings")) return;
     const data = readForm(event.currentTarget);
     await save(
       "settings",
@@ -1534,6 +1544,7 @@ function SettingsView({
 
   async function submitCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canPerformAction("categories")) return;
     const data = readForm(event.currentTarget);
     await save("categories", { id: crypto.randomUUID(), name: data.name }, "category");
     event.currentTarget.reset();
@@ -1541,6 +1552,7 @@ function SettingsView({
 
   async function submitUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canPerformAction("users")) return;
     setUserFormError("");
     const password = userForm.password.trim();
     const confirmPassword = userForm.confirmPassword.trim();
@@ -1693,8 +1705,19 @@ function SettingsView({
               <textarea name="receiptFooter" defaultValue={settings.receiptFooter} />
             </label>
             <div className="settings-actions">
-              <button className="primary">Save settings</button>
-              <button type="button" onClick={reset}>Reset prototype data</button>
+              <button className="primary" disabled={!canPerformAction("settings")}>Save settings</button>
+              <button
+                type="button"
+                disabled={!canPerformAction("settings")}
+                onClick={() => {
+                  if (!canPerformAction("settings")) return;
+                  if (window.confirm("WARNING: This will permanently delete ALL data and reset to factory defaults. This action cannot be undone. Are you sure?")) {
+                    reset();
+                  }
+                }}
+              >
+                Reset prototype data
+              </button>
             </div>
           </form>
         </section>
@@ -1709,15 +1732,15 @@ function SettingsView({
                 Category name
                 <input name="name" required placeholder="e.g. Vitamins" />
               </label>
-              <button className="primary">Save category</button>
+              <button className="primary" disabled={!canPerformAction("categories")}>Save category</button>
             </form>
             <DataPanel title={`Categories (${categories.length})`}>
               {categories.length === 0 ? <p className="empty">No categories yet.</p> : null}
               {categories.map((category) => (
                 <article className="data-row" key={category.id}>
                   <strong>{category.name}</strong>
-                  <button onClick={() => save("categories", { ...category, name: `${category.name}*` }, "category")}>Mark edited</button>
-                  <button className="danger" onClick={() => remove("categories", category.id, "category")}>Delete</button>
+                  <button disabled={!canPerformAction("categories")} onClick={() => canPerformAction("categories") && save("categories", { ...category, name: `${category.name}*` }, "category")}>Mark edited</button>
+                  <button className="danger" disabled={!canPerformAction("categories")} onClick={() => canPerformAction("categories") && remove("categories", category.id, "category")}>Delete</button>
                 </article>
               ))}
             </DataPanel>
@@ -1760,6 +1783,8 @@ function SettingsView({
                   }
                 >
                   <option value="cashier">Cashier</option>
+                  <option value="supervisor">Supervisor</option>
+                  <option value="pharmacist">Pharmacist</option>
                   <option value="admin">Admin</option>
                 </select>
               </label>
@@ -1785,7 +1810,7 @@ function SettingsView({
               </label>
               {userFormError ? <p className="error-copy">{userFormError}</p> : null}
               <div className="settings-actions">
-                <button className="primary">{editingUserId ? "Update user" : "Save user"}</button>
+                <button className="primary" disabled={!canPerformAction("users")}>{editingUserId ? "Update user" : "Save user"}</button>
                 {editingUserId ? (
                   <button type="button" onClick={cancelUserEdit}>Cancel</button>
                 ) : null}
@@ -1797,8 +1822,8 @@ function SettingsView({
                   <strong>{user.fullname}</strong>
                   <span>{user.username}</span>
                   <span className="role-badge">{user.role}</span>
-                  <button type="button" onClick={() => startEditUser(user)}>Edit</button>
-                  {user.id !== "usr-admin" ? <button className="danger" onClick={() => remove("users", user.id, "user")}>Delete</button> : null}
+                  <button type="button" disabled={!canPerformAction("users")} onClick={() => canPerformAction("users") && startEditUser(user)}>Edit</button>
+                  {user.id !== "usr-admin" ? <button className="danger" disabled={!canPerformAction("users")} onClick={() => canPerformAction("users") && remove("users", user.id, "user")}>Delete</button> : null}
                 </article>
               ))}
             </DataPanel>
@@ -1828,7 +1853,11 @@ function ReportsView({
   alertDays,
   scPwdTransactionLog,
   getScPwdSummary,
-  scPwdAlerts
+  scPwdAlerts,
+  canPerformAction,
+  users,
+  currentUser,
+  acknowledgeOverride,
 }: {
   transactions: ReturnType<typeof usePosStore>["transactions"];
   products: Product[];
@@ -1840,6 +1869,10 @@ function ReportsView({
   scPwdTransactionLog: ReturnType<typeof usePosStore>["scPwdTransactionLog"];
   getScPwdSummary: ReturnType<typeof usePosStore>["getScPwdSummary"];
   scPwdAlerts: ReturnType<typeof usePosStore>["scPwdAlerts"];
+  canPerformAction?: (action: import("@/lib/types").PermissionKey) => boolean;
+  users?: import("@/lib/types").User[];
+  currentUser?: import("@/lib/types").User | null;
+  acknowledgeOverride?: ReturnType<typeof usePosStore>["acknowledgeOverride"];
 }) {
   const [reportsTab, setReportsTab] = useState<"overview" | "bir" | "audit" | "sc-pwd">("overview");
   const totalSales = transactions.reduce((sum, transaction) => sum + transaction.total, 0);
@@ -1940,6 +1973,10 @@ function ReportsView({
           scPwdTransactionLog={scPwdTransactionLog}
           getScPwdSummary={getScPwdSummary}
           scPwdAlerts={scPwdAlerts}
+          canPerformAction={canPerformAction}
+          users={users}
+          currentUser={currentUser}
+          acknowledgeOverride={acknowledgeOverride}
         />
       ) : null}
       {reportsTab === "audit" ? (
@@ -1962,7 +1999,12 @@ function SyncView({
   syncNow,
   snapshot,
   alerts,
-  sloTargets
+  sloTargets,
+  syncStrategy,
+  setSyncStrategy,
+  lastSyncReport,
+  conflictItems,
+  resolveConflict
 }: {
   online: boolean;
   queue: ReturnType<typeof usePosStore>["syncQueue"];
@@ -1971,26 +2013,110 @@ function SyncView({
   snapshot: ReturnType<typeof usePosStore>["observabilitySnapshot"];
   alerts: ReturnType<typeof usePosStore>["activeAlerts"];
   sloTargets: ReturnType<typeof usePosStore>["sloTargets"];
+  syncStrategy: ReturnType<typeof usePosStore>["syncStrategy"];
+  setSyncStrategy: ReturnType<typeof usePosStore>["setSyncStrategy"];
+  lastSyncReport: ReturnType<typeof usePosStore>["lastSyncReport"];
+  conflictItems: ReturnType<typeof usePosStore>["conflictItems"];
+  resolveConflict: ReturnType<typeof usePosStore>["resolveConflict"];
 }) {
+  const pendingCount = queue.filter((item) => item.status === "pending").length;
+  const conflictCount = queue.filter((item) => item.status === "conflict").length;
+  const failedCount = queue.filter((item) => item.status === "failed").length;
+
   return (
     <section className="panel">
       <div className="sync-head">
         <div>
           <h2>Sync Online queue</h2>
-          <p>{online ? "Network available. Sync Online is simulated for this prototype." : "Offline. Local changes are queued."}</p>
+          <p>
+            {online ? "Network available." : "Offline. Local changes are queued."}
+            {pendingCount > 0 && ` ${pendingCount} item(s) pending.`}
+            {conflictCount > 0 && ` ${conflictCount} conflict(s) need resolution.`}
+            {failedCount > 0 && ` ${failedCount} item(s) failed.`}
+          </p>
         </div>
-        <button className="primary" onClick={syncNow} disabled={syncing || queue.every((item) => item.status !== "pending")}>
-          {syncing ? "Syncing..." : "Sync Online now"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ fontSize: 12, color: "#ccc" }}>
+            Strategy
+            <select
+              value={syncStrategy}
+              onChange={(e) => setSyncStrategy(e.target.value as typeof syncStrategy)}
+              style={{ marginLeft: 4, padding: "4px 8px", background: "#1a1a2e", color: "#fff", border: "1px solid #444", borderRadius: 4 }}
+            >
+              <option value="lww">Last-Write-Wins</option>
+              <option value="local-wins">Local Wins</option>
+              <option value="remote-wins">Remote Wins</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <button className="primary" onClick={syncNow} disabled={syncing || queue.every((item) => item.status !== "pending")}>
+            {syncing ? "Syncing..." : "Sync Online now"}
+          </button>
+        </div>
       </div>
+
+      {lastSyncReport && (
+        <div className="sync-report" style={{ marginBottom: 16, padding: 12, background: "#1a1a2e", borderRadius: 8, display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <span style={{ color: "#4ade80" }}>Synced: {lastSyncReport.synced}</span>
+          <span style={{ color: "#fbbf24" }}>Conflicts: {lastSyncReport.conflicts}</span>
+          <span style={{ color: "#f87171" }}>Failed: {lastSyncReport.failures}</span>
+          <span style={{ color: "#60a5fa" }}>Retries: {lastSyncReport.retries}</span>
+          <span style={{ color: "#ccc" }}>Processed: {lastSyncReport.processed}</span>
+        </div>
+      )}
+
+      {conflictItems.length > 0 && (
+        <div className="conflict-resolution" style={{ marginBottom: 16 }}>
+          <h3 style={{ color: "#fbbf24", marginBottom: 8 }}>Conflicts Requiring Resolution</h3>
+          {conflictItems.map((item) => (
+            <article key={item.id} style={{ padding: 12, background: "#2a1a1a", borderRadius: 8, marginBottom: 8, border: "1px solid #fbbf24" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <strong>{item.entity}</strong>
+                <span style={{ fontSize: 12, color: "#888" }}>{item.operation} — v{item.entityVersion}</span>
+              </div>
+              {item.resolvedConflict && (
+                <div style={{ fontSize: 12, color: "#aaa", marginBottom: 8 }}>
+                  Local v{item.resolvedConflict.localVersion} vs Remote v{item.resolvedConflict.remoteVersion}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => resolveConflict(item.id, "local-wins")}
+                  style={{ padding: "4px 12px", background: "#22c55e", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                >
+                  Keep Local
+                </button>
+                <button
+                  onClick={() => resolveConflict(item.id, "remote-wins")}
+                  style={{ padding: "4px 12px", background: "#3b82f6", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                >
+                  Use Remote
+                </button>
+                <button
+                  onClick={() => resolveConflict(item.id, "merged")}
+                  style={{ padding: "4px 12px", background: "#a855f7", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                >
+                  Merge
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
       <div className="sync-list">
         {queue.length === 0 ? <p className="empty">No queued changes yet.</p> : null}
         {queue.map((item) => (
           <article className="data-row" key={item.id}>
             <strong>{item.entity}</strong>
             <span>{item.operation}</span>
-            <span className={`sync-${item.status}`}>{item.status}</span>
+            <span className={`sync-${item.status}`}>
+              {item.status}
+              {item.status === "conflict" && " ⚠"}
+            </span>
+            <small>v{item.entityVersion}</small>
             <small>{new Date(item.createdAt).toLocaleString()}</small>
+            {item.lastError && <small style={{ color: "#f87171" }}>{item.lastError}</small>}
           </article>
         ))}
       </div>
@@ -2005,8 +2131,8 @@ function SyncView({
         <article className="metric"><span>Order throughput</span><strong>{snapshot.orderThroughputPerHour}/hr</strong></article>
       </div>
       <p>
-        SLOs: lag â‰¤{sloTargets.maxSyncLagSeconds}s, queue â‰¤{sloTargets.maxQueueDepth}, failed mutations â‰¤{sloTargets.maxFailedMutationsPer15m}/15m,
-        payment failures â‰¤{(sloTargets.maxPaymentFailureRate * 100).toFixed(1)}%, offline â‰¤{sloTargets.maxOfflineDurationSeconds}s, throughput â‰¥
+        SLOs: lag ≤{sloTargets.maxSyncLagSeconds}s, queue ≤{sloTargets.maxQueueDepth}, failed mutations ≤{sloTargets.maxFailedMutationsPer15m}/15m,
+        payment failures ≤{(sloTargets.maxPaymentFailureRate * 100).toFixed(1)}%, offline ≤{sloTargets.maxOfflineDurationSeconds}s, throughput ≥
         {sloTargets.minOrdersPerHour}/hr.
       </p>
       <DataPanel title="Active alerts">

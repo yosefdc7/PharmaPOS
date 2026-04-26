@@ -91,6 +91,12 @@ describe("local auth helpers", () => {
           settings: false,
           reports: false,
           sync: false,
+          void: false,
+          refund: false,
+          override: false,
+          xReading: false,
+          zReadingGenerate: false,
+          zReadingView: false,
         },
       })
     ).rejects.toThrow("Password is required when creating a user.");
@@ -121,6 +127,12 @@ describe("local auth helpers", () => {
         settings: false,
         reports: false,
         sync: false,
+        void: false,
+        refund: false,
+        override: false,
+        xReading: false,
+        zReadingGenerate: false,
+        zReadingView: false,
       },
     });
 

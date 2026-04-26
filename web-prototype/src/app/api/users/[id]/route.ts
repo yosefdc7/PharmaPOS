@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
 const SALT_ROUNDS = 10;
+const VALID_ROLES = ["admin", "supervisor", "pharmacist", "cashier"] as const;
 
 function rowToUser(row: Record<string, unknown>) {
   let permissions = row.permissions;
@@ -49,19 +50,22 @@ export async function PUT(
   const { id } = await params;
   const body = await request.json();
 
-  // Check if password is being changed
+  if (!VALID_ROLES.includes(body.role)) {
+    return NextResponse.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}` }, { status: 400 });
+  }
+
   if (body.password) {
     const hash = await bcrypt.hash(body.password, SALT_ROUNDS);
     const permissions = JSON.stringify(body.permissions ?? {});
     await db.execute({
       sql: `UPDATE users SET username = ?, fullname = ?, password_hash = ?, role = ?, permissions = ? WHERE id = ?`,
-      args: [body.username, body.fullname ?? "", hash, body.role ?? "cashier", permissions, id],
+      args: [body.username, body.fullname ?? "", hash, body.role, permissions, id],
     });
   } else {
     const permissions = JSON.stringify(body.permissions ?? {});
     await db.execute({
       sql: `UPDATE users SET username = ?, fullname = ?, role = ?, permissions = ? WHERE id = ?`,
-      args: [body.username, body.fullname ?? "", body.role ?? "cashier", permissions, id],
+      args: [body.username, body.fullname ?? "", body.role, permissions, id],
     });
   }
 

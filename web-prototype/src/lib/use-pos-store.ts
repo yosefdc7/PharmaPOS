@@ -12,6 +12,8 @@ import {
 } from "./calculations";
 import { DEFAULT_FEATURE_FLAGS, type FeatureFlags } from "./feature-flags";
 import {
+  acknowledgeOverride,
+  atomicSaleWrite,
   deleteOne,
   enqueueSync,
   getAll,
@@ -20,7 +22,6 @@ import {
   login as loginLocal,
   logout as logoutLocal,
   markPendingSyncAsSynced,
-  putMany,
   putOne,
   readSession,
   requestPersistentStorage,
@@ -28,7 +29,8 @@ import {
   saveLocalUserAccount,
   seedIfNeeded,
   shouldAutoLogin,
-  writeSession
+  writeSession,
+  getConflictItems
 } from "./db";
 import {
   buildSnapshot,
@@ -40,6 +42,20 @@ import {
   type ObservabilitySnapshot,
   type TelemetryEvent
 } from "./observability";
+import {
+  runSync,
+  resolveConflictManually,
+  getSyncStats,
+  type ConflictResolutionStrategy,
+} from "./sync-worker";
+import {
+  buildUserPermissions,
+  canUserAccessView,
+  getAvailableViews,
+  resolveAccessibleView,
+} from "./use-permissions";
+
+export { canUserAccessView, getAvailableViews, resolveAccessibleView };
 import type {
   AppViewKey,
   BirSettings,
@@ -49,6 +65,7 @@ import type {
   HeldOrder,
   PaymentMethod,
   PaymentStatus,
+  PermissionKey,
   PrescriptionDraft,
   PrescriptionRefusal,
   PrinterProfile,
@@ -66,7 +83,9 @@ import type {
   StoragePersistenceStatus,
   SyncQueueItem,
   Transaction,
-  User
+  User,
+  UserRole,
+  SupervisorAck
 } from "./types";
 
 type LoadState = "booting" | "ready" | "error";
@@ -88,43 +107,6 @@ export const ALL_APP_VIEWS: AppViewKey[] = [
   "reports",
   "sync"
 ];
-
-export function canUserAccessView(user: User | null, view: AppViewKey): boolean {
-  if (!user) return false;
-
-  switch (view) {
-    case "pos":
-      return user.permissions.transactions;
-    case "products":
-      return user.permissions.products;
-    case "customers":
-      return user.permissions.customers;
-    case "rx":
-      return user.permissions.rx;
-    case "control-tower":
-      return user.permissions.controlTower;
-    case "settings":
-      return user.permissions.settings;
-    case "reports":
-      return user.permissions.reports;
-    case "sync":
-      return user.permissions.sync;
-    default:
-      return false;
-  }
-}
-
-export function getAvailableViews(user: User | null): AppViewKey[] {
-  return ALL_APP_VIEWS.filter((view) => canUserAccessView(user, view));
-}
-
-export function resolveAccessibleView(requestedView: AppViewKey, user: User | null): AppViewKey {
-  const availableViews = getAvailableViews(user);
-  if (availableViews.includes(requestedView)) {
-    return requestedView;
-  }
-  return availableViews[0] ?? "pos";
-}
 
 export function usePosStore() {
   const [loadState, setLoadState] = useState<LoadState>("booting");
@@ -151,6 +133,15 @@ export function usePosStore() {
   const [lastReceipt, setLastReceipt] = useState<Transaction | null>(null);
   const [printFailure, setPrintFailure] = useState<{ transaction: Transaction; printer: PrinterProfile | null; queueJobId?: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncStrategy, setSyncStrategy] = useState<ConflictResolutionStrategy>("lww");
+  const [lastSyncReport, setLastSyncReport] = useState<{
+    processed: number;
+    synced: number;
+    conflicts: number;
+    failures: number;
+    retries: number;
+  } | null>(null);
+  const [conflictItems, setConflictItems] = useState<SyncQueueItem[]>([]);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
   const [storagePersistence, setStoragePersistence] = useState<StoragePersistenceStatus>("unknown");
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
@@ -187,7 +178,7 @@ export function usePosStore() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const [nextProducts, nextCategories, nextCustomers, nextUsers, nextSettings, nextTransactions, nextHeld, nextSync, nextFlags] =
+    const [nextProducts, nextCategories, nextCustomers, nextUsers, nextSettings, nextTransactions, nextHeld, nextSync, nextFlags, nextConflicts] =
       await Promise.all([
         getAll("products"),
         getAll("categories"),
@@ -197,7 +188,8 @@ export function usePosStore() {
         getAll("transactions"),
         getAll("heldOrders"),
         getAll("syncQueue"),
-        getFeatureFlags()
+        getFeatureFlags(),
+        getConflictItems()
       ]);
 
     setProducts(nextProducts);
@@ -209,6 +201,7 @@ export function usePosStore() {
     setHeldOrders(nextHeld.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     setSyncQueue(nextSync.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
     setFeatureFlags(nextFlags);
+    setConflictItems(nextConflicts);
   }, []);
 
   useEffect(() => {
@@ -421,14 +414,12 @@ export function usePosStore() {
           setScPwdTransactionLog((prev) => [...prev, row]);
         }
         const updatedProducts = decrementStock(products, processedCart);
-        await putMany("products", updatedProducts);
-        await putOne("transactions", transaction);
+        const updatedBir: (BirSettings & { id: string }) | null = bir
+          ? { ...bir, id: "bir", currentOrNumber: bir.currentOrNumber + 1 }
+          : null;
 
-        // Increment and persist OR number
-        if (bir) {
-          const updatedBir: BirSettings & { id: string } = { ...bir, id: "bir", currentOrNumber: bir.currentOrNumber + 1 };
-          await putOne("birSettings", updatedBir);
-        }
+        // Atomic write: all succeed or all fail together
+        await atomicSaleWrite(updatedProducts, transaction, updatedBir);
 
         await enqueueSync({ entity: "transaction", operation: "create", payload: transaction });
         await enqueueSync({ entity: "product", operation: "update", payload: updatedProducts });
@@ -546,7 +537,7 @@ export function usePosStore() {
       id?: string;
       username: string;
       fullname: string;
-      role: "admin" | "cashier";
+      role: User["role"];
       permissions: User["permissions"];
       password?: string;
     }) => {
@@ -574,20 +565,34 @@ export function usePosStore() {
   const syncNow = useCallback(async () => {
     if (!featureFlags.sync) return;
     setSyncing(true);
-    await traced("sync.now", { pending: pendingSync.length }, async () => {
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      await markPendingSyncAsSynced();
-      recordEvent({ type: "sync_completed", details: { flushed: pendingSync.length } });
-      logStructured("info", "sync.completed", { flushed: pendingSync.length });
-      await refresh();
-    }).catch((error) => {
-      const message = error instanceof Error ? error.message : "Unknown failure";
-      recordEvent({ type: "sync_failed", details: { message } });
-      logStructured("error", "sync.failed", { message });
-      throw error;
-    });
-    setSyncing(false);
-  }, [featureFlags.sync, pendingSync.length, recordEvent, refresh]);
+    try {
+      await traced("sync.now", { pending: pendingSync.length, strategy: syncStrategy }, async () => {
+        const report = await runSync(syncStrategy);
+        setLastSyncReport({
+          processed: report.processed,
+          synced: report.synced,
+          conflicts: report.conflicts,
+          failures: report.failures,
+          retries: report.retries,
+        });
+        recordEvent({ type: "sync_completed", details: { flushed: report.synced, conflicts: report.conflicts } });
+        logStructured("info", "sync.completed", { flushed: report.synced, conflicts: report.conflicts, failures: report.failures });
+        await refresh();
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : "Unknown failure";
+        recordEvent({ type: "sync_failed", details: { message } });
+        logStructured("error", "sync.failed", { message });
+        throw error;
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }, [featureFlags.sync, pendingSync.length, recordEvent, refresh, syncStrategy]);
+
+  const resolveConflict = useCallback(async (syncItemId: string, resolution: "local-wins" | "remote-wins" | "merged") => {
+    await resolveConflictManually(syncItemId, resolution);
+    await refresh();
+  }, [refresh]);
 
   const applyScPwdDiscount = useCallback(
     (details: ScPwdCustomerDetails) => {
@@ -663,6 +668,7 @@ export function usePosStore() {
   const refundTransaction = useCallback(
     async (transactionId: string, reason: string) => {
       if (!featureFlags.refunds) return null;
+      if (!currentUser?.permissions.refund) return null;
       const transaction = transactions.find((item) => item.id === transactionId);
       if (!transaction || transaction.paymentStatus === "refunded") return null;
 
@@ -834,6 +840,10 @@ export function usePosStore() {
     printFailure,
     clearPrintFailure,
     syncing,
+    syncStrategy,
+    setSyncStrategy,
+    lastSyncReport,
+    conflictItems,
     featureFlags,
     setDiscount,
     setRemarks,
@@ -851,6 +861,7 @@ export function usePosStore() {
     saveUserAccount,
     removeEntity,
     syncNow,
+    resolveConflict,
     refundTransaction,
     resetData,
     login,
@@ -870,6 +881,15 @@ export function usePosStore() {
     updateRxSettings,
     canAccessView,
     availableViews,
+    canPerformAction: useCallback(
+      (action: PermissionKey) => !!currentUser?.permissions[action],
+      [currentUser],
+    ),
+    acknowledgeOverride: useCallback(
+      (actionType: SupervisorAck["actionType"], supervisorId: string, supervisorName: string, reason: string, targetId?: string) =>
+        acknowledgeOverride(actionType, supervisorId, supervisorName, reason, targetId),
+      [],
+    ),
     observabilitySnapshot,
     sloTargets: defaultSloTargets,
     activeAlerts,

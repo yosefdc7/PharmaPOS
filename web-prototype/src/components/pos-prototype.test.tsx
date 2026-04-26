@@ -14,8 +14,10 @@ const mockedUsePosStore = vi.fn();
 
 vi.mock("@/lib/use-pos-store", async () => {
   const actual = await vi.importActual<typeof import("@/lib/use-pos-store")>("@/lib/use-pos-store");
+  const permissions = await vi.importActual<typeof import("@/lib/use-permissions")>("@/lib/use-permissions");
   return {
     ...actual,
+    ...permissions,
     usePosStore: () => mockedUsePosStore()
   };
 });
@@ -59,6 +61,11 @@ function renderProductsView() {
     totals: { itemCount: 0, subtotal: 0, discount: 0, taxableAmount: 0, tax: 0, total: 0 },
     lastReceipt: null,
     syncing: false,
+    syncStrategy: "lww" as const,
+    setSyncStrategy: vi.fn(),
+    lastSyncReport: null,
+    conflictItems: [],
+    resolveConflict: vi.fn(),
     featureFlags: { payments: true, sync: true, refunds: true },
     setDiscount: vi.fn(),
     setCustomerId: vi.fn(),

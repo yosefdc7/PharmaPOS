@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
 const SALT_ROUNDS = 10;
+const VALID_ROLES = ["admin", "supervisor", "pharmacist", "cashier"] as const;
 
 function rowToUser(row: Record<string, unknown>) {
   let permissions = row.permissions;
@@ -38,6 +39,10 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   const body = await request.json();
 
+  if (!VALID_ROLES.includes(body.role)) {
+    return NextResponse.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}` }, { status: 400 });
+  }
+
   const hash = await bcrypt.hash(body.password ?? "admin", SALT_ROUNDS);
   const permissions = JSON.stringify(body.permissions ?? {});
 
@@ -46,7 +51,7 @@ export async function POST(request: NextRequest) {
           VALUES (?, ?, ?, ?, ?, ?, '')
           ON CONFLICT (id) DO UPDATE SET username = excluded.username, fullname = excluded.fullname,
           role = excluded.role, permissions = excluded.permissions`,
-    args: [body.id, body.username, body.fullname ?? "", hash, body.role ?? "cashier", permissions],
+    args: [body.id, body.username, body.fullname ?? "", hash, body.role, permissions],
   });
 
   return NextResponse.json({ success: true });

@@ -130,6 +130,7 @@ export function RxWorkspace({
       {tab === "dispensing" ? (
         <RxDispensingPanel
           checkpoints={checkpoints}
+          pharmacists={pharmacists}
           onOpenPrescription={(checkpoint) => {
             setSelectedCheckpoint(checkpoint);
             setDrawerOpen(true);

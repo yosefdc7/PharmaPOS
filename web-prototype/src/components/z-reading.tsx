@@ -3,9 +3,10 @@ import { useState, useEffect, useCallback } from "react";
 import { getAll, getOne, putOne } from "../lib/db";
 import { logAuditEvent } from "./audit-trail";
 import { buildReceipt, createPrinterBackend, getReceiptLayoutOptions, PrinterService, resolvePrinterForRole } from "@/lib/printer";
-import type { Transaction, ZReading, BirSettings } from "@/lib/types";
+import { OverrideModal } from "./override-modal";
+import type { Transaction, ZReading, BirSettings, User } from "@/lib/types";
 
-const fmt = (n: number) => `\u20b1${n.toFixed(2)}`;
+const fmt = (n: number) => `₱${n.toFixed(2)}`;
 
 function computeZReading(
   transactions: Transaction[],
@@ -53,7 +54,23 @@ function computeZReading(
   };
 }
 
-export function ZReadingReport() {
+export function ZReadingReport({
+  canPerformAction,
+  users,
+  currentUser,
+  acknowledgeOverride,
+}: {
+  canPerformAction?: (action: import("@/lib/types").PermissionKey) => boolean;
+  users?: User[];
+  currentUser?: User | null;
+  acknowledgeOverride?: (
+    actionType: "void" | "refund" | "override" | "zReading",
+    supervisorId: string,
+    supervisorName: string,
+    reason: string,
+    targetId?: string,
+  ) => Promise<import("@/lib/types").SupervisorAck>;
+}) {
   const [generated, setGenerated] = useState<ZReading | null>(null);
   const [generating, setGenerating] = useState(false);
   const [zGeneratedToday, setZGeneratedToday] = useState(false);
@@ -62,6 +79,8 @@ export function ZReadingReport() {
   const [reading, setReading] = useState<Omit<ZReading, "id"> | null>(null);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
   const [history, setHistory] = useState<ZReading[]>([]);
+
+  const supervisors = users?.filter((u) => u.role === "admin" || u.role === "supervisor") ?? [];
 
   const loadAndCompute = useCallback(async () => {
     const [txs, birRaw, zHistory] = await Promise.all([
@@ -86,7 +105,7 @@ export function ZReadingReport() {
     loadAndCompute();
   }, [loadAndCompute]);
 
-  async function handleGenerate(override?: string) {
+  async function handleGenerate(override?: { reason: string; supervisorId: string; supervisorName: string }) {
     if (!reading) return;
     setGenerating(true);
     try {
@@ -94,18 +113,21 @@ export function ZReadingReport() {
         ...reading,
         id: crypto.randomUUID(),
         resetFlag: Boolean(override),
-        overrideReason: override,
-        overrideBy: override ? "Admin" : undefined,
+        overrideReason: override?.reason,
+        overrideBy: override?.supervisorName,
       };
       await putOne("zReadings", report);
       await logAuditEvent(
         "z-reading",
-        "Current User",
+        override?.supervisorName ?? "Current User",
         override
-          ? `Z-Reading override: ${override}`
+          ? `Z-Reading override: ${override.reason}`
           : `Z-Reading generated for ${reading.reportDate}`,
-        "admin"
+        override ? "supervisor" : "admin"
       );
+      if (override && acknowledgeOverride) {
+        await acknowledgeOverride("zReading", override.supervisorId, override.supervisorName, override.reason);
+      }
       setGenerated(report);
       setShowOverride(false);
       setOverrideReason("");
@@ -118,6 +140,14 @@ export function ZReadingReport() {
 
   const r = generated ?? reading;
 
+  if (!canPerformAction || !canPerformAction("zReadingView")) {
+    return (
+      <p style={{ color: "#6b7280", fontSize: "0.875rem" }}>
+        You don't have permission to view Z-Reading reports.
+      </p>
+    );
+  }
+
   return (
     <div>
       <div className="report-actions">
@@ -126,21 +156,23 @@ export function ZReadingReport() {
             <button className="primary report-generate-btn disabled" disabled>
               Z-Reading already generated for today
             </button>
-            <button
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--primary)",
-                textDecoration: "underline",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-              onClick={() => setShowOverride(true)}
-            >
-              Override
-            </button>
+            {canPerformAction?.("override") && (
+              <button
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--primary)",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={() => setShowOverride(true)}
+              >
+                Override
+              </button>
+            )}
           </>
-        ) : (
+        ) : canPerformAction?.("zReadingGenerate") ? (
           <button
             className="primary report-generate-btn"
             onClick={() => handleGenerate()}
@@ -148,39 +180,26 @@ export function ZReadingReport() {
           >
             {generating ? "Generating..." : "Generate Z-Reading"}
           </button>
+        ) : (
+          <p style={{ color: "#6b7280", fontSize: "0.875rem" }}>
+            You don't have permission to generate Z-Reading.
+          </p>
         )}
       </div>
 
-      {/* Override Modal */}
       {showOverride && (
-        <div className="override-modal-backdrop" onClick={() => setShowOverride(false)}>
-          <div className="override-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Z-Reading Override Required</h3>
-            <p>A Z-Reading has already been generated for today. Supervisor approval required.</p>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "var(--muted)" }}>
-              Reason (required)
-            </label>
-            <textarea
-              placeholder="Enter reason for override..."
-              value={overrideReason}
-              onChange={(e) => setOverrideReason(e.target.value)}
-            />
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "var(--muted)" }}>
-              Authorizing User
-            </label>
-            <input type="text" defaultValue="Admin" readOnly style={{ marginBottom: 16 }} />
-            <div className="override-modal-actions">
-              <button onClick={() => setShowOverride(false)}>Cancel</button>
-              <button
-                className="primary"
-                onClick={() => handleGenerate(overrideReason)}
-                disabled={!overrideReason.trim() || generating}
-              >
-                Confirm Override
-              </button>
-            </div>
-          </div>
-        </div>
+        <OverrideModal
+          actionType="zReading"
+          actionLabel="Z-Reading generation"
+          supervisors={supervisors.filter((s) => s.id !== currentUser?.id)}
+          onConfirm={(supervisorId, supervisorName, reason) => {
+            handleGenerate({ reason, supervisorId, supervisorName });
+          }}
+          onCancel={() => {
+            setShowOverride(false);
+            setOverrideReason("");
+          }}
+        />
       )}
 
       {r && (
@@ -311,7 +330,6 @@ export function ZReadingReport() {
             </div>
           </div>
 
-          {/* Z-Reading History Log */}
           <h3 style={{ marginTop: 24, marginBottom: 8 }}>Z-Reading History</h3>
           <table className="z-history-table">
             <thead>

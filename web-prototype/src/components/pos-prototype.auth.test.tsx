@@ -10,8 +10,10 @@ const mockedUsePosStore = vi.fn();
 
 vi.mock("@/lib/use-pos-store", async () => {
   const actual = await vi.importActual<typeof import("@/lib/use-pos-store")>("@/lib/use-pos-store");
+  const permissions = await vi.importActual<typeof import("@/lib/use-permissions")>("@/lib/use-permissions");
   return {
     ...actual,
+    ...permissions,
     usePosStore: () => mockedUsePosStore(),
   };
 });
@@ -162,6 +164,11 @@ describe("PosPrototype auth and view gating", () => {
       printFailure: null,
       clearPrintFailure: vi.fn(),
       syncing: false,
+      syncStrategy: "lww" as const,
+      setSyncStrategy: vi.fn(),
+      lastSyncReport: null,
+      conflictItems: [],
+      resolveConflict: vi.fn(),
       featureFlags: { payments: true, sync: true, refunds: true },
       setDiscount: vi.fn(),
       setRemarks: vi.fn(),
@@ -196,8 +203,14 @@ describe("PosPrototype auth and view gating", () => {
       clearRxRedFlag: vi.fn(),
       getRxInspectionSnapshot: vi.fn(),
       updateRxSettings: vi.fn(),
-      canAccessView: (view: Parameters<typeof canUserAccessView>[1]) => canUserAccessView(seedUsers[1], view),
-      availableViews: ALL_APP_VIEWS.filter((view) => canUserAccessView(seedUsers[1], view)),
+      canAccessView: (view: Parameters<typeof canUserAccessView>[1]) => {
+        const cashier = seedUsers.find((u) => u.role === "cashier")!;
+        return canUserAccessView(cashier, view);
+      },
+      availableViews: (() => {
+        const cashier = seedUsers.find((u) => u.role === "cashier")!;
+        return ALL_APP_VIEWS.filter((view) => canUserAccessView(cashier, view));
+      })(),
       observabilitySnapshot: {
         syncLagSeconds: 0,
         queueDepth: 0,
@@ -224,6 +237,11 @@ describe("PosPrototype auth and view gating", () => {
       validateScPwdEligibility: vi.fn(),
       getScPwdSummary: vi.fn(),
       acknowledgeScPwdAlert: vi.fn(),
+      canPerformAction: (action: import("@/lib/types").PermissionKey) => {
+        const cashier = seedUsers.find((u) => u.role === "cashier")!;
+        return !!cashier.permissions[action];
+      },
+      acknowledgeOverride: vi.fn(),
     });
 
     render(<PosPrototype />);

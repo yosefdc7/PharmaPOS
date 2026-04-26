@@ -109,7 +109,9 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   created_at TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   retry_count INTEGER NOT NULL DEFAULT 0,
-  last_error TEXT NOT NULL DEFAULT ''
+  last_error TEXT NOT NULL DEFAULT '',
+  entity_version INTEGER NOT NULL DEFAULT 1,
+  resolved_conflict TEXT
 );
 
 CREATE TABLE IF NOT EXISTS _meta (

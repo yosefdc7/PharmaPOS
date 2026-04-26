@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Poppins } from "next/font/google";
+import type { ReactNode } from "react";
 import "./globals.css";
+import { SerwistProvider } from "./serwist";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -8,10 +10,44 @@ const poppins = Poppins({
   display: "swap"
 });
 
+const APP_NAME = "PharmaPOS PH";
+const APP_DEFAULT_TITLE = "PharmaPOS PH Web POS";
+const APP_TITLE_TEMPLATE = "%s - PharmaPOS PH";
+const APP_DESCRIPTION = "Offline-first POS prototype for PharmaPOS PH";
+
 export const metadata: Metadata = {
-  title: "PharmaPOS PH Web POS",
-  description: "Offline-first POS prototype for PharmaPOS PH",
-  manifest: "/manifest.json"
+  applicationName: APP_NAME,
+  title: {
+    default: APP_DEFAULT_TITLE,
+    template: APP_TITLE_TEMPLATE,
+  },
+  description: APP_DESCRIPTION,
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: APP_DEFAULT_TITLE,
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  openGraph: {
+    type: "website",
+    siteName: APP_NAME,
+    title: {
+      default: APP_DEFAULT_TITLE,
+      template: APP_TITLE_TEMPLATE,
+    },
+    description: APP_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary",
+    title: {
+      default: APP_DEFAULT_TITLE,
+      template: APP_TITLE_TEMPLATE,
+    },
+    description: APP_DESCRIPTION,
+  },
 };
 
 export const viewport: Viewport = {
@@ -20,10 +56,13 @@ export const viewport: Viewport = {
   themeColor: "#635BFF"
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
-      <body className={poppins.className}>{children}</body>
+      <head />
+      <body className={poppins.className}>
+        <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>
+      </body>
     </html>
   );
 }

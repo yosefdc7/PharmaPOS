@@ -216,7 +216,61 @@ export const seedUsers: User[] = [
       users: true,
       settings: true,
       reports: true,
-      sync: true
+      sync: true,
+      void: true,
+      refund: true,
+      override: true,
+      xReading: true,
+      zReadingGenerate: true,
+      zReadingView: true,
+    }
+  },
+  {
+    id: "usr-supervisor",
+    username: "supervisor",
+    fullname: "Shift Supervisor",
+    role: "supervisor",
+    permissions: {
+      products: false,
+      categories: false,
+      customers: true,
+      transactions: true,
+      rx: false,
+      controlTower: false,
+      users: false,
+      settings: false,
+      reports: true,
+      sync: false,
+      void: true,
+      refund: true,
+      override: true,
+      xReading: true,
+      zReadingGenerate: false,
+      zReadingView: true,
+    }
+  },
+  {
+    id: "usr-pharmacist",
+    username: "pharmacist",
+    fullname: "Staff Pharmacist",
+    role: "pharmacist",
+    permissions: {
+      products: false,
+      categories: false,
+      customers: true,
+      transactions: true,
+      rx: true,
+      controlTower: false,
+      users: false,
+      settings: false,
+      reports: false,
+      sync: false,
+      void: false,
+      refund: false,
+      override: false,
+      xReading: false,
+      zReadingGenerate: false,
+      zReadingView: false,
     }
   },
   {
@@ -234,7 +288,13 @@ export const seedUsers: User[] = [
       users: false,
       settings: false,
       reports: false,
-      sync: false
+      sync: false,
+      void: false,
+      refund: false,
+      override: false,
+      xReading: false,
+      zReadingGenerate: false,
+      zReadingView: false,
     }
   }
 ];

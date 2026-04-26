@@ -7,15 +7,12 @@ import type { RxPharmacist } from "@/lib/types";
 
 type Props = {
   checkpoints: DispenseCheckpoint[];
+  pharmacists: RxPharmacist[];
   onOpenPrescription: (checkpoint: DispenseCheckpoint) => void;
   onLogRefusal: (refusal: PrescriptionRefusal) => void;
 };
 
-const defaultPharmacists: RxPharmacist[] = [
-  { id: "mock-1", name: "Rina Dela Cruz", prcNumber: "PRC-1263901", role: "pharmacist" }
-];
-
-export function RxDispensingPanel({ checkpoints, onOpenPrescription, onLogRefusal }: Props) {
+export function RxDispensingPanel({ checkpoints, pharmacists, onOpenPrescription, onLogRefusal }: Props) {
   const [showAck, setShowAck] = useState(false);
   const [acknowledgedBy, setAcknowledgedBy] = useState("");
   const requiresAck = checkpoints.some((item) => item.requiresPharmacistAck);
@@ -64,7 +61,7 @@ export function RxDispensingPanel({ checkpoints, onOpenPrescription, onLogRefusa
       {acknowledgedBy ? <p className="retention-notice">Last pharmacist acknowledgment: {acknowledgedBy}</p> : null}
       {showAck && requiresAck ? (
         <PharmacistAckModal
-          pharmacists={defaultPharmacists}
+          pharmacists={pharmacists}
           onClose={() => setShowAck(false)}
           onConfirm={(name, prc) => {
             setAcknowledgedBy(`${name} (${prc})`);

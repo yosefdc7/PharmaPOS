@@ -8,7 +8,15 @@ export type PermissionKey =
   | "users"
   | "settings"
   | "reports"
-  | "sync";
+  | "sync"
+  | "void"
+  | "refund"
+  | "override"
+  | "xReading"
+  | "zReadingGenerate"
+  | "zReadingView";
+
+export type UserRole = "admin" | "supervisor" | "pharmacist" | "cashier";
 
 export type AppViewKey =
   | "pos"
@@ -22,7 +30,7 @@ export type AppViewKey =
 
 export type PaymentMethod = "cash" | "external-terminal";
 export type PaymentStatus = "paid" | "pending" | "refunded";
-export type SyncStatus = "pending" | "synced" | "failed";
+export type SyncStatus = "pending" | "synced" | "failed" | "conflict";
 
 export type ScPwdEligibility = "medicine" | "non-medicine" | "excluded";
 export type DrugClassification = "DD, Rx" | "EDD, Rx" | "Rx" | "Pharmacist-Only OTC" | "Non-Rx OTC";
@@ -54,6 +62,35 @@ export type Product = {
   fdaCprNumber?: string;
   behindCounter?: boolean;
   ddLastReconciliationAt?: string;
+};
+
+export type SyncQueueItemEntity = "product" | "category" | "customer" | "user" | "settings" | "transaction" | "held-order";
+
+export type ConflictResolutionStrategy = "lww" | "local-wins" | "remote-wins" | "manual";
+
+export type SyncConflict = {
+  syncItemId: string;
+  entity: SyncQueueItemEntity;
+  entityId: string;
+  localVersion: number;
+  remoteVersion: number;
+  localPayload: unknown;
+  remotePayload: unknown;
+  resolvedAt?: string;
+  resolution?: "local-wins" | "remote-wins" | "merged";
+};
+
+export type SyncQueueItem = {
+  id: string;
+  entity: SyncQueueItemEntity;
+  operation: "create" | "update" | "delete";
+  payload: unknown;
+  createdAt: string;
+  status: SyncStatus;
+  retryCount: number;
+  lastError: string;
+  entityVersion: number;
+  resolvedConflict?: SyncConflict;
 };
 
 export type PrescriptionStatus = "DRAFT" | "SERVED" | "PARTIAL - OPEN" | "FULLY SERVED" | "REFUSED";
@@ -165,6 +202,16 @@ export type PrescriptionRefusal = {
   productName: string;
 };
 
+export type SupervisorAck = {
+  id: string;
+  actionType: "void" | "refund" | "override" | "zReading";
+  supervisorId: string;
+  supervisorName: string;
+  reason: string;
+  targetId?: string;
+  createdAt: string;
+};
+
 export type RxPharmacist = {
   id: string;
   name: string;
@@ -203,7 +250,7 @@ export type User = {
   id: string;
   username: string;
   fullname: string;
-  role: "admin" | "cashier";
+  role: UserRole;
   permissions: Record<PermissionKey, boolean>;
 };
 
@@ -318,17 +365,6 @@ export type HeldOrder = {
   createdAt: string;
   scPwdDiscountActive?: boolean;
   scPwdDraft?: ScPwdCustomerDetails;
-};
-
-export type SyncQueueItem = {
-  id: string;
-  entity: "product" | "category" | "customer" | "user" | "settings" | "transaction" | "held-order";
-  operation: "create" | "update" | "delete";
-  payload: unknown;
-  createdAt: string;
-  status: SyncStatus;
-  retryCount: number;
-  lastError: string;
 };
 
 export type CartTotals = {
@@ -490,7 +526,7 @@ export type AuditEntry = {
   timestamp: string;
   details: string;
   reportType?: string;
-  requiredRole: "admin" | "supervisor" | "cashier";
+  requiredRole: "admin" | "supervisor" | "pharmacist" | "cashier";
 };
 
 export type ReprintQueueItemStatus = "pending" | "printed" | "failed";
