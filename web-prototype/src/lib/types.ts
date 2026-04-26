@@ -347,11 +347,14 @@ export type PrinterProfile = {
   partialCut: boolean;
   role: PrinterRole;
   isDefault: boolean;
+  defaultForOr?: boolean;
+  defaultForReport?: boolean;
   status: PrinterStatusType;
   baudRate?: number;
   bridgeUrl?: string;
   deviceId?: string;
   portInfo?: { vendorId?: number; productId?: number; serialNumber?: string };
+  receiptLayout?: ReceiptLayoutConfig;
 };
 
 export type PrintJobResult =
@@ -368,6 +371,8 @@ export type ReceiptLayoutConfig = {
   maxReceiptLines: number;
   autoCondense: boolean;
 };
+
+export type PrintVariant = "normal" | "void" | "reprint" | "x-reading" | "z-reading" | "daily-summary";
 
 export type XReading = {
   id: string;
@@ -470,6 +475,10 @@ export type ReprintQueueItem = {
   id: string;
   orNumber: number;
   transactionId: string;
+  profileId: string;
+  commandsBase64: string;
+  variant: PrintVariant;
+  jobType: PrinterActivityLog["jobType"];
   createdAt: string;
   status: ReprintQueueItemStatus;
   failureReason?: string;

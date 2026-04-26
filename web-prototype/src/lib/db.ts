@@ -230,29 +230,6 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<Fea
   return next;
 }
 
-export async function login(
-  username: string,
-  password: string
-): Promise<{ auth: boolean; user?: User }> {
-  const users = await getAll("users");
-  const user = users.find((candidate) => candidate.username === username);
-  if (!user) {
-    return { auth: false };
-  }
-
-  // The offline-first prototype stores demo users without password hashes.
-  // Keep authentication local by accepting the seeded demo credentials.
-  const validPassword =
-    (username === "admin" && password === "admin") ||
-    (username === "cashier" && password === "cashier");
-
-  if (!validPassword) {
-    return { auth: false };
-  }
-
-  return { auth: true, user };
-}
-
 export async function enqueueSync(
   item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError">
 ): Promise<SyncQueueItem> {
@@ -282,6 +259,22 @@ export async function markPendingSyncAsSynced(): Promise<void> {
       transaction.syncStatus === "pending" ? { ...transaction, syncStatus: "synced" } : transaction
     )
   );
+}
+
+export async function login(username: string, password: string): Promise<{ auth: boolean; user?: User }> {
+  const users = await getAll("users");
+  const user = users.find((candidate) => candidate.username === username);
+  if (!user) {
+    return { auth: false };
+  }
+
+  // Prototype auth stays local and intentionally simple for seeded demo users.
+  const passwordMatches = password === username || (username === "admin" && password === "admin");
+  if (!passwordMatches) {
+    return { auth: false };
+  }
+
+  return { auth: true, user };
 }
 
 export async function seedIfNeeded(): Promise<void> {

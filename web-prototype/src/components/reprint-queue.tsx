@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { ReprintQueueItem, ReprintQueueItemStatus } from "@/lib/types";
-import { getAllJobs, markJobStatus, clearPrintedJobs } from "@/lib/printer/print-queue";
-import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
+import type { ReprintQueueItem } from "@/lib/types";
+import { getAllJobs, markJobStatus, clearPrintedJobs, base64ToCommands } from "@/lib/printer/print-queue";
+import { PrinterService, createPrinterBackend } from "@/lib/printer";
 import { getOne } from "@/lib/db";
 import { logPrinterActivity } from "./audit-trail";
 
@@ -37,8 +37,7 @@ export function ReprintQueue({ onClose }: ReprintQueueProps) {
   const pending = jobs.filter((j) => j.status === "pending" || j.status === "failed");
 
   async function printJob(job: ReprintQueueItem) {
-    const profilesRaw = await getAllJobs();
-    const profile = (await getOne("printerProfiles", job.transactionId)) ?? undefined;
+    const profile = (await getOne("printerProfiles", job.profileId)) ?? undefined;
     if (!profile) {
       await markJobStatus(job.id, "failed", "Printer profile not found");
       await load();
@@ -60,15 +59,14 @@ export function ReprintQueue({ onClose }: ReprintQueueProps) {
       return;
     }
 
-    const transaction = await getOne("transactions", job.transactionId);
-    if (!transaction) {
-      await markJobStatus(job.id, "failed", "Transaction not found");
+    if (!job.commandsBase64) {
+      await markJobStatus(job.id, "failed", "Queued print payload missing");
       await service.disconnect();
       await load();
       return;
     }
 
-    const commands = buildReceipt("normal", profile, undefined, transaction);
+    const commands = base64ToCommands(job.commandsBase64);
     const printResult = await service.print(commands);
     await service.disconnect();
 

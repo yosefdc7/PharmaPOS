@@ -1,32 +1,33 @@
-import { getAll, putOne, deleteOne } from "@/lib/db";
-import type { ReprintQueueItem, ReprintQueueItemStatus, PrinterProfile } from "@/lib/types";
-
-export type PrintJobPayload = {
-  id: string;
-  orNumber: number;
-  transactionId: string;
-  profileId?: string;
-  commandsBase64: string;
-  createdAt: string;
-  status: ReprintQueueItemStatus;
-  failureReason?: string;
-};
+import { deleteOne, getAll, putOne } from "@/lib/db";
+import type { PrintVariant, ReprintQueueItem, ReprintQueueItemStatus } from "@/lib/types";
 
 const EXPIRY_MS = 5 * 60 * 1000;
 
 export async function enqueuePrintJob(
   orNumber: number,
   transactionId: string,
+  variant: PrintVariant,
   commands: Uint8Array,
-  profileId?: string
+  profileId: string
 ): Promise<ReprintQueueItem> {
   const item: ReprintQueueItem = {
     id: crypto.randomUUID(),
     orNumber,
     transactionId,
+    profileId,
+    commandsBase64: commandsToBase64(commands),
+    variant,
+    jobType:
+      variant === "normal"
+        ? "receipt"
+        : variant === "void"
+          ? "void-receipt"
+          : variant === "reprint"
+            ? "reprint"
+            : variant,
     createdAt: new Date().toISOString(),
     status: "pending",
-    failureReason: undefined,
+    failureReason: undefined
   };
   await putOne("reprintQueue", item);
   return item;

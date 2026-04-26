@@ -1,10 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { getAll, putOne } from "../lib/db";
-import { getOne } from "../lib/db";
+import { getAll, getOne, putOne } from "../lib/db";
 import { logAuditEvent } from "./audit-trail";
-import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
-import type { Transaction, XReading, BirSettings, PrinterProfile } from "@/lib/types";
+import { buildReceipt, createPrinterBackend, getReceiptLayoutOptions, PrinterService, resolvePrinterForRole } from "@/lib/printer";
+import type { Transaction, XReading, BirSettings } from "@/lib/types";
 
 const fmt = (n: number) => `\u20b1${n.toFixed(2)}`;
 
@@ -192,8 +191,11 @@ export function XReadingReport() {
               onClick={async () => {
                 if (!r) return;
                 setPrintStatus("Connecting…");
-                const profiles = (await getAll("printerProfiles")) as PrinterProfile[];
-                const printer = profiles.find((p) => p.role === "report" || p.role === "both");
+                const [profiles, nextBir] = await Promise.all([
+                  getAll("printerProfiles"),
+                  getOne("birSettings", "bir")
+                ]);
+                const printer = resolvePrinterForRole(profiles, "report");
                 if (!printer) {
                   setPrintStatus("No report printer configured");
                   return;
@@ -205,7 +207,7 @@ export function XReadingReport() {
                   await service.disconnect();
                   return;
                 }
-                const commands = buildReceipt("x-reading", printer, undefined, r as XReading);
+                const commands = buildReceipt("x-reading", printer, (nextBir as BirSettings | undefined) ?? undefined, r as XReading, getReceiptLayoutOptions(printer));
                 const result = await service.print(commands);
                 await service.disconnect();
                 setPrintStatus(result.status === "success" ? "Printed" : `Failed: ${result.status}`);

@@ -4,10 +4,6 @@ import { openPosDb, promisifyRequest, completeTransaction } from "./db";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
-// Experimental bridge for future server-backed flows.
-// The default web-prototype runtime remains IndexedDB-first and should not
-// depend on this module for its core POS path.
-
 // Stores that are managed by IndexedDB directly (no REST API)
 const IDB_STORE_NAMES = [
   "meta", "products", "categories", "customers", "users", "settings",

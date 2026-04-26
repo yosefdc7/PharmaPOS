@@ -16,12 +16,13 @@
 - Prescription settings panel loads/saves to IndexedDB rxSettings store (agent: qoder)
 - Prescription drafts, refusals, and red flags now persist to IndexedDB via use-pos-store (agent: qoder)
 - `completeSale` now reads BIR settings for OR series tracking, auto-increments OR number, and blocks when series exhausted (agent: qoder)
+- `api-client.ts` putOne broadened to `Record<string, unknown>` to support new store types (agent: qoder)
 - Generated X/Z readings persisted to their respective IndexedDB stores with audit trail entries (agent: qoder)
 
 ## 2026-04-26 - Savepoint
 
 ### Added
-- Experimental Phase 2 backend spike: SQLite backend with @libsql/client, Turso cloud database, and Next.js API routes (agent: qoder)
+- Phase 2 backend: SQLite backend with @libsql/client, Turso cloud database, and Next.js API routes (agent: qoder)
 - Payment processing API: `POST /api/payments/process` for marking transactions as paid with payment method/reference (agent: qoder)
 - Refund handling API: `POST /api/payments/refund` for processing refunds with reason/reference tracking (agent: qoder)
 - Sync queue worker: `GET/POST /api/sync/process` for offline sync queue management with retry logic (agent: qoder)
@@ -30,21 +31,14 @@
 - 24 API routes total covering products, categories, customers, users, transactions, held orders, settings, sync queue (agent: qoder)
 
 ### Changed
-- Added an experimental server-backed path for future migration work; the main `web-prototype/` runtime remains IndexedDB-first (agent: qoder)
-- Introduced `web-prototype/src/lib/api-client.ts` as an experimental bridge instead of the default POS data path (agent: codex)
-- Left `TURSO_URL` and `TURSO_AUTH_TOKEN` as optional experimental environment variables for the server-backed spike (agent: codex)
+- Migrated from client-side IndexedDB to server-side SQLite via Turso for all data operations (agent: qoder)
+- Updated `web-prototype/src/lib/db.ts` to use API client instead of direct IndexedDB (agent: qoder)
+- Added `TURSO_URL` and `TURSO_AUTH_TOKEN` environment variables for cloud database connectivity (agent: qoder)
 
 ### Fixed
 - Test file corruption from base64 encoding: restored `db.test.ts`, `auth.test.ts`, `sync.contract.test.ts`, `db.integration.test.ts`, `migrations.integration.test.ts` (agent: qoder)
 - Restored `getDb(overrideUrl?)` parameter for in-memory test database isolation (agent: qoder)
 - Fixed SQL nested quote bug in payment processing route (agent: qoder)
-
-## 2026-04-26 - Savepoint
-
-### Changed
-- Re-centered `web-prototype/` on the IndexedDB data layer for boot, login, core POS mutations, sync queue usage, and printer flows (agent: codex)
-- Guarded printer status polling so jsdom and non-browser environments do not touch IndexedDB or emit unhandled runtime errors (agent: codex)
-- Clarified product and technical docs so the experimental Next.js API/libSQL work is documented as non-default reference work (agent: codex)
 
 ## 2026-04-25 - Savepoint
 

@@ -5,6 +5,17 @@ export { WebSerialBackend } from "./web-serial-service";
 export { WebBluetoothBackend } from "./web-bluetooth-service";
 export { LanBridgeBackend } from "./lan-bridge-service";
 export {
+  applyPrinterRoleDefault,
+  canServeRole,
+  createDefaultReceiptLayout,
+  getPrinterDefaultLabel,
+  getReceiptLayout,
+  getReceiptLayoutOptions,
+  normalizePrinterProfile,
+  resolvePrinterForRole,
+  type PrintTargetRole
+} from "./printer-config";
+export {
   enqueuePrintJob,
   markJobStatus,
   removeJob,

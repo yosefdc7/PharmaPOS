@@ -46,7 +46,6 @@ import type {
   PrescriptionRefusal,
   PrinterProfile,
   Product,
-  ReprintQueueItem,
   RxInspectionSnapshot,
   RxPharmacist,
   RxRedFlag,
@@ -94,7 +93,7 @@ export function usePosStore() {
   const [forcedOffline, setForcedOffline] = useState(false);
   const [browserOnline, setBrowserOnline] = useState(true);
   const [lastReceipt, setLastReceipt] = useState<Transaction | null>(null);
-  const [printFailure, setPrintFailure] = useState<{ transaction: Transaction; printer: PrinterProfile | null } | null>(null);
+  const [printFailure, setPrintFailure] = useState<{ transaction: Transaction; printer: PrinterProfile | null; queueJobId?: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
@@ -367,26 +366,32 @@ export function usePosStore() {
 
         // Attempt thermal print
         try {
-          const { PrinterService, createPrinterBackend, buildReceipt, enqueuePrintJob } = await import("./printer");
-          const profiles = (await getAll("printerProfiles")) as PrinterProfile[];
-          const orPrinter = profiles.find((p) => p.isDefault && (p.role === "or" || p.role === "both"))
-            ?? profiles.find((p) => p.role === "or" || p.role === "both");
+          const {
+            PrinterService,
+            buildReceipt,
+            createPrinterBackend,
+            enqueuePrintJob,
+            getReceiptLayoutOptions,
+            resolvePrinterForRole
+          } = await import("./printer");
+          const profiles = await getAll("printerProfiles");
+          const orPrinter = resolvePrinterForRole(profiles, "or");
           if (orPrinter) {
+            const commands = buildReceipt("normal", orPrinter, bir, transaction, getReceiptLayoutOptions(orPrinter));
             const service = new PrinterService(createPrinterBackend);
             const connectResult = await service.connect(orPrinter);
             if (connectResult.status === "success") {
-              const commands = buildReceipt("normal", orPrinter, bir, transaction);
               const printResult = await service.print(commands);
               await service.disconnect();
               if (printResult.status !== "success") {
-                await enqueuePrintJob(Number(transaction.localNumber), transaction.id, commands, orPrinter.id);
-                setPrintFailure({ transaction, printer: orPrinter });
+                const queuedJob = await enqueuePrintJob(Number(transaction.localNumber), transaction.id, "normal", commands, orPrinter.id);
+                setPrintFailure({ transaction, printer: orPrinter, queueJobId: queuedJob.id });
               } else {
                 // log success printer activity handled by pos-prototype if needed
               }
             } else {
-              await enqueuePrintJob(Number(transaction.localNumber), transaction.id, new Uint8Array(0), orPrinter.id);
-              setPrintFailure({ transaction, printer: orPrinter });
+              const queuedJob = await enqueuePrintJob(Number(transaction.localNumber), transaction.id, "normal", commands, orPrinter.id);
+              setPrintFailure({ transaction, printer: orPrinter, queueJobId: queuedJob.id });
             }
           }
         } catch (printErr) {

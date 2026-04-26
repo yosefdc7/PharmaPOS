@@ -1,7 +1,7 @@
-import type { BirSettings, PrinterProfile, Transaction, XReading, ZReading } from "@/lib/types";
+import type { BirSettings, PrintVariant, PrinterProfile, Transaction, XReading, ZReading } from "@/lib/types";
 import { EscPosBuilder, line, text, align, bold, doubleHeight, normalSize, initPrinter, feedLines, cut } from "./escpos-commands";
 
-export type ReceiptVariant = "normal" | "void" | "reprint" | "x-reading" | "z-reading" | "daily-summary";
+export type ReceiptVariant = PrintVariant;
 
 const CHARS_58MM = 32;
 const CHARS_80MM = 48;

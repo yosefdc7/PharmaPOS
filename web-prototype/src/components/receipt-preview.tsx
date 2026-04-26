@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import type { Transaction, PrinterProfile } from "@/lib/types";
-import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
-import { getAll } from "@/lib/db";
+import { useEffect, useMemo, useState } from "react";
+import { getAll, getOne } from "@/lib/db";
+import type { BirSettings, PrinterProfile, Settings, Transaction } from "@/lib/types";
+import {
+  buildReceipt,
+  createPrinterBackend,
+  getReceiptLayout,
+  getReceiptLayoutOptions,
+  PrinterService,
+  resolvePrinterForRole
+} from "@/lib/printer";
 
-function formatPeso(n: number): string {
-  return "₱" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+function formatMoney(value: number): string {
+  return `P${value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 }
 
 type ReceiptPreviewProps = {
@@ -17,23 +24,52 @@ type ReceiptPreviewProps = {
 
 export function ReceiptPreview({ variant = "normal", onClose, transaction }: ReceiptPreviewProps) {
   const [printStatus, setPrintStatus] = useState<string | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [birSettings, setBirSettings] = useState<BirSettings | null>(null);
+  const [printer, setPrinter] = useState<PrinterProfile | null>(null);
+
   const tx = transaction;
   const items = tx?.items ?? [];
   const scPwdMeta = tx?.scPwdMetadata;
   const hasScPwd = Boolean(scPwdMeta);
   const dateStr = tx ? new Date(tx.createdAt).toLocaleString("en-PH") : new Date().toLocaleString("en-PH");
-  const orNumber = tx?.localNumber ?? "000049920";
+  const orNumber = tx?.localNumber ?? "Not issued";
+
+  useEffect(() => {
+    async function loadContext() {
+      const [nextSettings, nextBir, profiles] = await Promise.all([
+        getOne("settings", "store"),
+        getOne("birSettings", "bir"),
+        getAll("printerProfiles")
+      ]);
+
+      setSettings(nextSettings ?? null);
+      setBirSettings(nextBir ?? null);
+      setPrinter(resolvePrinterForRole(profiles, "or") ?? null);
+    }
+
+    loadContext();
+  }, []);
+
+  const layout = useMemo(() => getReceiptLayout(printer ?? undefined), [printer]);
+
+  const headerLines = useMemo(() => {
+    const lines = [
+      settings?.store || birSettings?.registeredName || "Store name not configured",
+      settings?.addressOne,
+      settings?.addressTwo,
+      settings?.contact ? `Contact: ${settings.contact}` : undefined
+    ];
+
+    return lines.filter((line): line is string => Boolean(line && line.trim()));
+  }, [birSettings?.registeredName, settings?.addressOne, settings?.addressTwo, settings?.contact, settings?.store]);
 
   async function handleThermalPrint() {
-    if (!tx) return;
-    setPrintStatus("Connecting…");
-    const profiles = (await getAll("printerProfiles")) as PrinterProfile[];
-    const printer = profiles.find((p) => p.isDefault && (p.role === "or" || p.role === "both"))
-      ?? profiles.find((p) => p.role === "or" || p.role === "both");
-    if (!printer) {
-      setPrintStatus("No OR printer configured");
+    if (!tx || !printer) {
       return;
     }
+
+    setPrintStatus("Connecting...");
     const service = new PrinterService(createPrinterBackend);
     const connectResult = await service.connect(printer);
     if (connectResult.status !== "success") {
@@ -41,7 +77,8 @@ export function ReceiptPreview({ variant = "normal", onClose, transaction }: Rec
       await service.disconnect();
       return;
     }
-    const commands = buildReceipt(variant, printer, undefined, tx);
+
+    const commands = buildReceipt(variant, printer, birSettings ?? undefined, tx, getReceiptLayoutOptions(printer));
     const result = await service.print(commands);
     await service.disconnect();
     setPrintStatus(result.status === "success" ? "Printed" : `Failed: ${result.status}`);
@@ -49,172 +86,159 @@ export function ReceiptPreview({ variant = "normal", onClose, transaction }: Rec
 
   return (
     <div className="receipt-preview">
-      {/* Void watermark */}
       {variant === "void" && <div className="receipt-void-watermark">VOID</div>}
 
-      {/* Reprint header */}
       {variant === "reprint" && (
         <div className="receipt-reprint-header">
-          *** REPRINT — NOT AN ORIGINAL OR ***
+          *** REPRINT - NOT AN ORIGINAL OR ***
           <div style={{ fontWeight: 400, fontSize: 10, marginTop: 2 }}>
             Reprinted: {dateStr}
-            <br />
-            Authorized by: Juan Cruz (Supervisor)
           </div>
         </div>
       )}
 
-      {/* Store header */}
       <div className="receipt-center">
-        <div className="receipt-store-name">PharmaPOS PH Drug Store</div>
-        <div>123 Main Street, Quezon City</div>
-        <div>TIN: 123-456-789-000</div>
-        <div>PTU No: FPU0000001234</div>
-        <div style={{ fontSize: 10 }}>Accreditation No: 0123456789012345678901234</div>
+        <div className="receipt-store-name">{headerLines[0] ?? "Store name not configured"}</div>
+        {headerLines.slice(1).map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+        <div>TIN: {birSettings?.tin || "Not configured"}</div>
+        <div>PTU No: {birSettings?.ptuNumber || "Not configured"}</div>
+        <div style={{ fontSize: 10 }}>Accreditation No: {birSettings?.accreditationNumber || "Not configured"}</div>
+        <div style={{ fontSize: 10 }}>Machine S/N: {birSettings?.machineSerial || "Not configured"}</div>
+        {layout.headerLines.map((line) => (
+          <div key={`layout-header-${line}`}>{line}</div>
+        ))}
       </div>
 
       <hr className="receipt-separator" />
 
-      {/* OR info */}
       <div className="receipt-center">
         <div className="receipt-or-title">Official Receipt</div>
         <div>OR #: {orNumber}</div>
         <div>Date: {dateStr}</div>
+        {!printer && <div>OR printer not configured</div>}
       </div>
 
       <hr className="receipt-separator" />
 
-      {/* Line items header */}
-      <div className="receipt-line-item" style={{ fontWeight: 700, marginBottom: 4 }}>
-        <span className="item-name">Item</span>
-        <span className="item-detail" style={{ width: 30 }}>Qty</span>
-        <span className="item-detail" style={{ width: 60 }}>Price</span>
-        <span className="item-detail" style={{ width: 70 }}>Amount</span>
-      </div>
-
-      {/* Line items */}
-      {items.length > 0 ? (
-        items.map((item) => (
-          <div className="receipt-line-item" key={item.productId}>
-            <span className="item-name">
-              {item.productName}
-              {item.vatExempt && (
-                <span style={{ fontSize: 9, display: "block", color: "#666" }}>VAT-EXEMPT</span>
-              )}
-              {item.scPwdDiscounted && item.originalPrice && item.originalPrice > item.price && (
-                <span style={{ fontSize: 9, display: "block", color: "#666" }}>
-                  Disc {formatPeso(item.originalPrice - item.price)} each
-                </span>
-              )}
-            </span>
-            <span className="item-detail" style={{ width: 30 }}>{item.quantity}</span>
-            <span className="item-detail" style={{ width: 60 }}>{formatPeso(item.price)}</span>
-            <span className="item-detail" style={{ width: 70 }}>{formatPeso(item.price * item.quantity)}</span>
-          </div>
-        ))
+      {!tx ? (
+        <div className="receipt-center" style={{ padding: "12px 0" }}>
+          No completed transaction selected. Complete a sale to preview a live receipt.
+        </div>
       ) : (
         <>
-          <div className="receipt-line-item"><span className="item-name">Biogesic 500mg</span><span className="item-detail" style={{ width: 30 }}>2</span><span className="item-detail" style={{ width: 60 }}>{formatPeso(15.0)}</span><span className="item-detail" style={{ width: 70 }}>{formatPeso(30.0)}</span></div>
-          <div className="receipt-line-item"><span className="item-name">Amoxicillin 500mg</span><span className="item-detail" style={{ width: 30 }}>1</span><span className="item-detail" style={{ width: 60 }}>{formatPeso(85.0)}</span><span className="item-detail" style={{ width: 70 }}>{formatPeso(85.0)}</span></div>
+          <div className="receipt-line-item" style={{ fontWeight: 700, marginBottom: 4 }}>
+            <span className="item-name">Item</span>
+            <span className="item-detail" style={{ width: 30 }}>Qty</span>
+            <span className="item-detail" style={{ width: 60 }}>Price</span>
+            <span className="item-detail" style={{ width: 70 }}>Amount</span>
+          </div>
+
+          {items.map((item) => (
+            <div className="receipt-line-item" key={item.productId}>
+              <span className="item-name">
+                {item.productName}
+                {item.vatExempt && (
+                  <span style={{ fontSize: 9, display: "block", color: "#666" }}>VAT-EXEMPT</span>
+                )}
+                {item.scPwdDiscounted && item.originalPrice && item.originalPrice > item.price && (
+                  <span style={{ fontSize: 9, display: "block", color: "#666" }}>
+                    Disc {formatMoney(item.originalPrice - item.price)} each
+                  </span>
+                )}
+              </span>
+              <span className="item-detail" style={{ width: 30 }}>{item.quantity}</span>
+              <span className="item-detail" style={{ width: 60 }}>{formatMoney(item.price)}</span>
+              <span className="item-detail" style={{ width: 70 }}>{formatMoney(item.lineTotal ?? item.price * item.quantity)}</span>
+            </div>
+          ))}
+
+          <hr className="receipt-separator" />
+
+          <div className="receipt-subtotal-row">
+            <span>Subtotal</span>
+            <span>{formatMoney(tx.subtotal)}</span>
+          </div>
+          {hasScPwd && (
+            <div className="receipt-subtotal-row">
+              <span>VATable Sales</span>
+              <span>{formatMoney(0)}</span>
+            </div>
+          )}
+          <div className="receipt-subtotal-row">
+            <span>VAT Amount (12%)</span>
+            <span>{formatMoney(tx.tax)}</span>
+          </div>
+          <div className="receipt-subtotal-row">
+            <span>VAT-Exempt Sales</span>
+            <span>{formatMoney(hasScPwd ? tx.subtotal : 0)}</span>
+          </div>
+          <div className="receipt-subtotal-row total-due">
+            <span>Total Due</span>
+            <span>{formatMoney(tx.total)}</span>
+          </div>
+
+          <hr className="receipt-separator" />
+
+          {hasScPwd && scPwdMeta && (
+            <div className="receipt-sc-section">
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                {scPwdMeta.discountType.toUpperCase()} Discount Applied
+              </div>
+              <div>Customer: {scPwdMeta.fullName}</div>
+              <div>ID: {scPwdMeta.idNumber}</div>
+              {scPwdMeta.tin && <div>TIN: {scPwdMeta.tin}</div>}
+              <div>Discount Amount: {formatMoney(scPwdMeta.scPwdDiscountAmount)}</div>
+              {scPwdMeta.proxyPurchase && scPwdMeta.proxyDetails && (
+                <div>Proxy: {scPwdMeta.proxyDetails.proxyName} ({scPwdMeta.proxyDetails.proxyRelation})</div>
+              )}
+            </div>
+          )}
+
+          <div className="receipt-subtotal-row">
+            <span>Payment Method</span>
+            <span>{tx.paymentMethod === "external-terminal" ? "CARD" : "CASH"}</span>
+          </div>
+          <div className="receipt-subtotal-row">
+            <span>Amount Tendered</span>
+            <span>{formatMoney(tx.paid)}</span>
+          </div>
+          <div className="receipt-subtotal-row">
+            <span>Change</span>
+            <span>{formatMoney(tx.paid - tx.total)}</span>
+          </div>
+
+          <hr className="receipt-separator" />
+
+          <div className="receipt-footer">
+            <div>Cashier: {tx.cashierId || "Not recorded"}</div>
+            {hasScPwd && <div>Signature: ____________________</div>}
+            {layout.footerLines.map((line) => (
+              <div key={`layout-footer-${line}`}>{line}</div>
+            ))}
+            {settings?.receiptFooter && <div style={{ marginTop: 4 }}>{settings.receiptFooter}</div>}
+            <div>This serves as your Official Receipt</div>
+          </div>
+
+          {variant === "void" && (
+            <div className="receipt-void-details">
+              <div>Original OR#: {tx.localNumber}</div>
+              <div>Void status preview only</div>
+              <div>Void Date: {dateStr}</div>
+            </div>
+          )}
         </>
       )}
 
-      <hr className="receipt-separator" />
-
-      {/* Tax breakdown */}
-      <div className="receipt-subtotal-row">
-        <span>Subtotal</span>
-        <span>{formatPeso(tx?.subtotal ?? 1492.5)}</span>
-      </div>
-      {hasScPwd && (
-        <div className="receipt-subtotal-row">
-          <span>VATable Sales</span>
-          <span>{formatPeso(0)}</span>
-        </div>
-      )}
-      <div className="receipt-subtotal-row">
-        <span>VAT Amount (12%)</span>
-        <span>{formatPeso(tx?.tax ?? 159.91)}</span>
-      </div>
-      <div className="receipt-subtotal-row">
-        <span>VAT-Exempt Sales</span>
-        <span>{formatPeso(hasScPwd ? (tx?.subtotal ?? 0) : 0)}</span>
-      </div>
-      <div className="receipt-subtotal-row total-due">
-        <span>Total Due</span>
-        <span>{formatPeso(tx?.total ?? 1492.5)}</span>
-      </div>
-
-      <hr className="receipt-separator" />
-
-      {/* SC/PWD section */}
-      {hasScPwd && scPwdMeta && (
-        <div className="receipt-sc-section">
-          <div style={{ fontWeight: 700, marginBottom: 2 }}>
-            {scPwdMeta.discountType.toUpperCase()} Discount Applied
-          </div>
-          <div>Customer: {scPwdMeta.fullName}</div>
-          <div>ID: {scPwdMeta.idNumber}</div>
-          {scPwdMeta.tin && <div>TIN: {scPwdMeta.tin}</div>}
-          <div>Discount Amount: {formatPeso(scPwdMeta.scPwdDiscountAmount)}</div>
-          {scPwdMeta.proxyPurchase && scPwdMeta.proxyDetails && (
-            <div>Proxy: {scPwdMeta.proxyDetails.proxyName} ({scPwdMeta.proxyDetails.proxyRelation})</div>
-          )}
-        </div>
-      )}
-
-      {!hasScPwd && variant === "normal" && (
-        <div className="receipt-sc-section">
-          <div style={{ fontWeight: 700, marginBottom: 2 }}>SC/PWD Discount Applied</div>
-          <div>SC/PWD ID: SC-2024-001234</div>
-          <div>Discount Amount: {formatPeso(250.0)}</div>
-          <div>VAT-Exempt Adjustment: {formatPeso(26.79)}</div>
-        </div>
-      )}
-
-      {/* Payment section */}
-      <div className="receipt-subtotal-row">
-        <span>Payment Method</span>
-        <span>{tx?.paymentMethod === "external-terminal" ? "CARD" : "CASH"}</span>
-      </div>
-      <div className="receipt-subtotal-row">
-        <span>Amount Tendered</span>
-        <span>{formatPeso(tx?.paid ?? 1500.0)}</span>
-      </div>
-      <div className="receipt-subtotal-row">
-        <span>Change</span>
-        <span>{formatPeso(tx ? tx.paid - tx.total : 7.5)}</span>
-      </div>
-
-      <hr className="receipt-separator" />
-
-      {/* Footer */}
-      <div className="receipt-footer">
-        <div>Cashier: {tx ? "Cashier" : "Maria Santos"}</div>
-        {hasScPwd && <div>Signature: ____________________</div>}
-        <div style={{ marginTop: 4 }}>Thank you for your purchase!</div>
-        <div>This serves as your Official Receipt</div>
-      </div>
-
-      {/* Void details */}
-      {variant === "void" && (
-        <div className="receipt-void-details">
-          <div>Original OR#: {tx?.localNumber ?? "000049918"}</div>
-          <div>Void Reason: Customer requested cancellation</div>
-          <div>Void Date: {dateStr}</div>
-          <div>Authorized by: Juan Cruz (Supervisor)</div>
-        </div>
-      )}
-
-      {/* Print buttons */}
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
         <button
           className="primary"
           onClick={handleThermalPrint}
-          disabled={!tx || printStatus === "Connecting…"}
+          disabled={!tx || !printer || printStatus === "Connecting..."}
           style={{ width: "100%" }}
         >
-          {printStatus === "Connecting…" ? "Printing…" : "Print to Thermal"}
+          {printStatus === "Connecting..." ? "Printing..." : "Print to Thermal"}
         </button>
         {printStatus && (
           <div style={{ fontSize: 12, textAlign: "center", color: printStatus.startsWith("Failed") ? "var(--danger)" : "var(--success)" }}>

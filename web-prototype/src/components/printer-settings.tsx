@@ -1,23 +1,27 @@
 "use client";
 
-import { useState, FormEvent, useEffect } from "react";
-import { getAll, putOne, deleteOne } from "../lib/db";
-import type { PrinterProfile, PrinterConnectionType, PrinterRole, PrinterActivityLog } from "@/lib/types";
-import { PrinterService, createPrinterBackend, buildReceipt } from "@/lib/printer";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { deleteOne, getAll, getOne, putOne } from "../lib/db";
+import type { BirSettings, PrinterConnectionType, PrinterProfile, PrinterRole } from "@/lib/types";
+import {
+  applyPrinterRoleDefault,
+  buildReceipt,
+  createDefaultReceiptLayout,
+  createPrinterBackend,
+  getPrinterDefaultLabel,
+  getReceiptLayout,
+  getReceiptLayoutOptions,
+  normalizePrinterProfile,
+  PrinterService
+} from "@/lib/printer";
 import { logPrinterActivity } from "./audit-trail";
+
+const DEFAULT_BRIDGE_URL = "http://localhost:9101";
 
 export function PrinterSettingsPanel() {
   const [printers, setPrinters] = useState<PrinterProfile[]>([]);
   const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      const saved = await getAll("printerProfiles") as PrinterProfile[];
-      setPrinters(saved);
-      setLoaded(true);
-    }
-    load();
-  }, []);
+  const [selectedPrinterId, setSelectedPrinterId] = useState("");
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -27,9 +31,8 @@ export function PrinterSettingsPanel() {
   const [newCharSet, setNewCharSet] = useState("UTF-8");
   const [newRole, setNewRole] = useState<PrinterRole>("both");
   const [newBaudRate, setNewBaudRate] = useState(9600);
-  const [newBridgeUrl, setNewBridgeUrl] = useState("http://localhost:9101");
+  const [newBridgeUrl, setNewBridgeUrl] = useState(DEFAULT_BRIDGE_URL);
 
-  // Receipt Layout state
   const [headerLines, setHeaderLines] = useState("");
   const [footerLines, setFooterLines] = useState("");
   const [autoCut, setAutoCut] = useState(true);
@@ -37,16 +40,28 @@ export function PrinterSettingsPanel() {
   const [maxReceiptLines, setMaxReceiptLines] = useState(40);
   const [autoCondense, setAutoCondense] = useState(false);
 
-  // Toast state
   const [toast, setToast] = useState<string | null>(null);
-
-  // Scanning state
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
 
-  // Browser capability warnings
   const serialAvailable = typeof navigator !== "undefined" && "serial" in navigator;
   const bluetoothAvailable = typeof navigator !== "undefined" && "bluetooth" in navigator;
+
+  const selectedPrinter = useMemo(
+    () => printers.find((printer) => printer.id === selectedPrinterId) ?? null,
+    [printers, selectedPrinterId]
+  );
+
+  useEffect(() => {
+    async function load() {
+      const saved = (await getAll("printerProfiles")).map(normalizePrinterProfile);
+      setPrinters(saved);
+      setSelectedPrinterId((current) => current || saved[0]?.id || "");
+      setLoaded(true);
+    }
+
+    load();
+  }, []);
 
   useEffect(() => {
     if (toast) {
@@ -54,6 +69,27 @@ export function PrinterSettingsPanel() {
       return () => clearTimeout(timer);
     }
   }, [toast]);
+
+  useEffect(() => {
+    if (!selectedPrinter) {
+      const layout = createDefaultReceiptLayout();
+      setHeaderLines(layout.headerLines.join("\n"));
+      setFooterLines(layout.footerLines.join("\n"));
+      setAutoCut(true);
+      setPartialCut(false);
+      setMaxReceiptLines(layout.maxReceiptLines);
+      setAutoCondense(layout.autoCondense);
+      return;
+    }
+
+    const layout = getReceiptLayout(selectedPrinter);
+    setHeaderLines(layout.headerLines.join("\n"));
+    setFooterLines(layout.footerLines.join("\n"));
+    setAutoCut(selectedPrinter.autocut);
+    setPartialCut(selectedPrinter.partialCut);
+    setMaxReceiptLines(layout.maxReceiptLines);
+    setAutoCondense(layout.autoCondense);
+  }, [selectedPrinter]);
 
   function addressLabel(type: PrinterConnectionType): string {
     if (type === "usb") return "Device Path";
@@ -68,39 +104,92 @@ export function PrinterSettingsPanel() {
     return "Error";
   }
 
-  async function handleAddPrinter(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const newPrinter: PrinterProfile = {
+  async function persistProfiles(updated: PrinterProfile[]) {
+    setPrinters(updated);
+    await Promise.all(updated.map((printer) => putOne("printerProfiles", printer)));
+  }
+
+  async function replacePrinter(updatedPrinter: PrinterProfile) {
+    const updated = printers.map((printer) => (printer.id === updatedPrinter.id ? normalizePrinterProfile(updatedPrinter) : printer));
+    setPrinters(updated);
+    await putOne("printerProfiles", normalizePrinterProfile(updatedPrinter));
+  }
+
+  function buildLayoutDraft() {
+    return {
+      logoUrl: selectedPrinter?.receiptLayout?.logoUrl ?? "",
+      headerLines: headerLines.split("\n").map((line) => line.trim()).filter(Boolean),
+      footerLines: footerLines.split("\n").map((line) => line.trim()).filter(Boolean),
+      maxReceiptLines: Math.max(10, maxReceiptLines || 40),
+      autoCondense
+    };
+  }
+
+  async function handleAddPrinter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const newPrinter = normalizePrinterProfile({
       id: crypto.randomUUID(),
       label: newLabel,
       connectionType: newConnection,
       address: newAddress,
       paperWidth: newPaperWidth,
       characterSet: newCharSet,
-      autocut: autoCut,
-      partialCut: partialCut,
+      autocut: true,
+      partialCut: false,
       role: newRole,
       isDefault: false,
+      defaultForOr: false,
+      defaultForReport: false,
       status: "offline",
       baudRate: newConnection === "usb" ? newBaudRate : undefined,
       bridgeUrl: newConnection === "lan" ? newBridgeUrl : undefined,
-    };
+      receiptLayout: createDefaultReceiptLayout()
+    });
+
     await putOne("printerProfiles", newPrinter);
-    setPrinters((prev) => [...prev, newPrinter]);
+    setPrinters((current) => [...current, newPrinter]);
+    setSelectedPrinterId((current) => current || newPrinter.id);
     setNewLabel("");
     setNewAddress("");
     setNewBaudRate(9600);
-    setNewBridgeUrl("http://localhost:9101");
+    setNewBridgeUrl(DEFAULT_BRIDGE_URL);
     setShowAddForm(false);
   }
 
   async function deletePrinter(id: string) {
     await deleteOne("printerProfiles", id);
-    setPrinters((prev) => prev.filter((p) => p.id !== id));
+    const updated = printers.filter((printer) => printer.id !== id);
+    setPrinters(updated);
+    setSelectedPrinterId((current) => (current === id ? updated[0]?.id || "" : current));
+  }
+
+  async function saveLayout() {
+    if (!selectedPrinter) {
+      return;
+    }
+
+    const updatedPrinter = normalizePrinterProfile({
+      ...selectedPrinter,
+      autocut: autoCut,
+      partialCut: partialCut && autoCut,
+      receiptLayout: buildLayoutDraft()
+    });
+
+    await replacePrinter(updatedPrinter);
+    setToast(`Saved receipt layout for ${updatedPrinter.label}`);
+  }
+
+  async function setDefault(printerId: string, role: "or" | "report") {
+    const updated = applyPrinterRoleDefault(printers, printerId, role).map(normalizePrinterProfile);
+    await persistProfiles(updated);
+    setToast(role === "or" ? "Updated default OR printer" : "Updated default report printer");
   }
 
   async function testPrint(printer: PrinterProfile) {
-    setToast(`Connecting to ${printer.label}…`);
+    setToast(`Connecting to ${printer.label}...`);
+
+    const bir = await getOne("birSettings", "bir") as BirSettings | undefined;
     const service = new PrinterService(createPrinterBackend);
     const connectResult = await service.connect(printer);
     if (connectResult.status !== "success") {
@@ -110,15 +199,12 @@ export function PrinterSettingsPanel() {
         timestamp: new Date().toISOString(),
         printerUsed: printer.label,
         status: "failed",
-        failureReason: connectResult.status,
+        failureReason: connectResult.status
       });
       return;
     }
 
-    const sample = buildReceipt("normal", printer, undefined, null, {
-      headerLines: headerLines ? headerLines.split("\n") : undefined,
-      footerLines: footerLines ? footerLines.split("\n") : undefined,
-    });
+    const sample = buildReceipt("normal", printer, bir, null, getReceiptLayoutOptions(printer));
     const printResult = await service.print(sample);
     await service.disconnect();
 
@@ -133,18 +219,13 @@ export function PrinterSettingsPanel() {
       timestamp: new Date().toISOString(),
       printerUsed: printer.label,
       status: printResult.status === "success" ? "success" : "failed",
-      failureReason: "reason" in printResult ? printResult.reason : undefined,
+      failureReason: "reason" in printResult ? printResult.reason : undefined
     });
 
-    // Update profile status in state
-    setPrinters((prev) =>
-      prev.map((p) =>
-        p.id === printer.id
-          ? { ...p, status: printResult.status === "success" ? "online" as const : "offline" as const }
-          : p
-      )
-    );
-    await putOne("printerProfiles", { ...printer, status: printResult.status === "success" ? "online" : "offline" });
+    await replacePrinter({
+      ...printer,
+      status: printResult.status === "success" ? "online" : "offline"
+    });
   }
 
   async function autoDetectUsb() {
@@ -152,14 +233,16 @@ export function PrinterSettingsPanel() {
       setScanResult("Web Serial API is not available in this browser. Use Chrome or Edge on HTTPS/localhost.");
       return;
     }
+
     setScanning(true);
     setScanResult(null);
+
     try {
       // @ts-expect-error navigator.serial is experimental
       const port = await navigator.serial.requestPort();
       // @ts-expect-error getInfo is experimental
       const info = port.getInfo ? port.getInfo() : {};
-      const detected: PrinterProfile = {
+      const detected = normalizePrinterProfile({
         id: crypto.randomUUID(),
         label: `USB Printer (${info.usbVendorId?.toString(16) ?? "unknown"})`,
         connectionType: "usb",
@@ -170,22 +253,26 @@ export function PrinterSettingsPanel() {
         partialCut: false,
         role: "both",
         isDefault: false,
+        defaultForOr: false,
+        defaultForReport: false,
         status: "offline",
         baudRate: 9600,
         portInfo: {
           vendorId: info.usbVendorId,
-          productId: info.usbProductId,
+          productId: info.usbProductId
         },
-      };
+        receiptLayout: createDefaultReceiptLayout()
+      });
       await putOne("printerProfiles", detected);
-      setPrinters((prev) => [...prev, detected]);
+      setPrinters((current) => [...current, detected]);
+      setSelectedPrinterId((current) => current || detected.id);
       setScanResult("Found 1 new USB printer and added it to the list.");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("No port selected") || msg.includes("NotFoundError")) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("No port selected") || message.includes("NotFoundError")) {
         setScanResult("No new printers found.");
       } else {
-        setScanResult(`Error: ${msg}`);
+        setScanResult(`Error: ${message}`);
       }
     } finally {
       setScanning(false);
@@ -197,17 +284,20 @@ export function PrinterSettingsPanel() {
       setScanResult("Web Bluetooth API is not available in this browser. Use Chrome or Edge on HTTPS/localhost.");
       return;
     }
+
     setScanning(true);
     setScanResult(null);
+
     try {
       // @ts-expect-error navigator.bluetooth is experimental
       const device = await navigator.bluetooth.requestDevice({
         filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
-        optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb", "00001101-0000-1000-8000-00805f9b34fb"],
+        optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb", "00001101-0000-1000-8000-00805f9b34fb"]
       });
-      const detected: PrinterProfile = {
+
+      const detected = normalizePrinterProfile({
         id: crypto.randomUUID(),
-        label: `Bluetooth Printer (${(device as unknown as { name?: string }).name ?? "unknown"})`,
+        label: `Bluetooth Printer (${(device as { name?: string }).name ?? "unknown"})`,
         connectionType: "bluetooth",
         address: device.id,
         paperWidth: 80,
@@ -216,18 +306,22 @@ export function PrinterSettingsPanel() {
         partialCut: false,
         role: "both",
         isDefault: false,
+        defaultForOr: false,
+        defaultForReport: false,
         status: "offline",
         deviceId: device.id,
-      };
+        receiptLayout: createDefaultReceiptLayout()
+      });
       await putOne("printerProfiles", detected);
-      setPrinters((prev) => [...prev, detected]);
+      setPrinters((current) => [...current, detected]);
+      setSelectedPrinterId((current) => current || detected.id);
       setScanResult("Paired Bluetooth printer and added it to the list.");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("NotFoundError") || msg.includes("User cancelled")) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("NotFoundError") || message.includes("User cancelled")) {
         setScanResult("No Bluetooth printer selected.");
       } else {
-        setScanResult(`Error: ${msg}`);
+        setScanResult(`Error: ${message}`);
       }
     } finally {
       setScanning(false);
@@ -238,15 +332,13 @@ export function PrinterSettingsPanel() {
     <section className="panel settings-panel">
       <h2>Printer Settings</h2>
 
-      {/* Browser capability warnings */}
       {(!serialAvailable || !bluetoothAvailable) && (
         <div style={{ background: "#fff3cd", color: "#664d03", padding: "8px 12px", borderRadius: "4px", fontSize: "13px", marginBottom: "12px" }}>
-          {!serialAvailable && <div>Web Serial API unavailable — USB printer auto-detect will not work. Use Chrome/Edge on HTTPS/localhost.</div>}
-          {!bluetoothAvailable && <div>Web Bluetooth API unavailable — Bluetooth printer pairing will not work. Use Chrome/Edge on HTTPS/localhost.</div>}
+          {!serialAvailable && <div>Web Serial API unavailable - USB printer auto-detect will not work. Use Chrome/Edge on HTTPS/localhost.</div>}
+          {!bluetoothAvailable && <div>Web Bluetooth API unavailable - Bluetooth printer pairing will not work. Use Chrome/Edge on HTTPS/localhost.</div>}
         </div>
       )}
 
-      {/* Action buttons */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
         <button className="primary" onClick={() => setShowAddForm(!showAddForm)}>
           {showAddForm ? "Cancel" : "Add Printer"}
@@ -259,11 +351,10 @@ export function PrinterSettingsPanel() {
         </button>
       </div>
 
-      {/* Scanning animation */}
       {scanning && (
         <div className="scan-animation">
           <div className="scan-spinner" />
-          Scanning for USB printers...
+          Scanning for printers...
         </div>
       )}
       {scanResult && !scanning && (
@@ -272,7 +363,6 @@ export function PrinterSettingsPanel() {
         </p>
       )}
 
-      {/* Add Printer Form (PR-1, PR-2) */}
       {showAddForm && (
         <form className="add-printer-form" onSubmit={handleAddPrinter}>
           <h3>Add Printer</h3>
@@ -282,7 +372,7 @@ export function PrinterSettingsPanel() {
               <input
                 type="text"
                 value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
+                onChange={(event) => setNewLabel(event.target.value)}
                 placeholder="Counter 1 Printer"
                 required
               />
@@ -309,13 +399,13 @@ export function PrinterSettingsPanel() {
               <input
                 type="text"
                 value={newAddress}
-                onChange={(e) => setNewAddress(e.target.value)}
+                onChange={(event) => setNewAddress(event.target.value)}
                 placeholder={
                   newConnection === "usb"
                     ? "/dev/usb/lp0"
                     : newConnection === "bluetooth"
-                    ? "00:11:22:33:44:55"
-                    : "192.168.1.100"
+                      ? "00:11:22:33:44:55"
+                      : "192.168.1.100"
                 }
                 required
               />
@@ -327,7 +417,7 @@ export function PrinterSettingsPanel() {
                 <input
                   type="number"
                   value={newBaudRate}
-                  onChange={(e) => setNewBaudRate(Number(e.target.value))}
+                  onChange={(event) => setNewBaudRate(Number(event.target.value))}
                   placeholder="9600"
                   required
                 />
@@ -340,8 +430,8 @@ export function PrinterSettingsPanel() {
                 <input
                   type="text"
                   value={newBridgeUrl}
-                  onChange={(e) => setNewBridgeUrl(e.target.value)}
-                  placeholder="http://localhost:9101"
+                  onChange={(event) => setNewBridgeUrl(event.target.value)}
+                  placeholder={DEFAULT_BRIDGE_URL}
                   required
                 />
               </label>
@@ -350,14 +440,14 @@ export function PrinterSettingsPanel() {
             <div className="input-label">
               Paper Width
               <div className="connection-type-selector">
-                {([58, 80] as const).map((w) => (
+                {([58, 80] as const).map((width) => (
                   <button
-                    key={w}
+                    key={width}
                     type="button"
-                    className={newPaperWidth === w ? "active" : ""}
-                    onClick={() => setNewPaperWidth(w)}
+                    className={newPaperWidth === width ? "active" : ""}
+                    onClick={() => setNewPaperWidth(width)}
                   >
-                    {w}mm
+                    {width}mm
                   </button>
                 ))}
               </div>
@@ -365,7 +455,7 @@ export function PrinterSettingsPanel() {
 
             <label className="input-label">
               Character Set
-              <select value={newCharSet} onChange={(e) => setNewCharSet(e.target.value)}>
+              <select value={newCharSet} onChange={(event) => setNewCharSet(event.target.value)}>
                 <option value="UTF-8">UTF-8</option>
                 <option value="ESC/POS Standard">ESC/POS Standard</option>
               </select>
@@ -373,19 +463,20 @@ export function PrinterSettingsPanel() {
 
             <label className="input-label">
               Role
-              <select value={newRole} onChange={(e) => setNewRole(e.target.value as PrinterRole)}>
+              <select value={newRole} onChange={(event) => setNewRole(event.target.value as PrinterRole)}>
                 <option value="or">OR Printer</option>
                 <option value="report">Report Printer</option>
                 <option value="both">Both</option>
               </select>
             </label>
 
-            <button className="primary" type="submit">Save Printer</button>
+            <button className="primary" type="submit">
+              Save Printer
+            </button>
           </div>
         </form>
       )}
 
-      {/* Printer List Table (PR-1, PR-5) */}
       <table className="printer-table">
         <thead>
           <tr>
@@ -413,163 +504,207 @@ export function PrinterSettingsPanel() {
               </td>
             </tr>
           )}
-          {printers.map((printer) => (
-            <tr key={printer.id}>
-              <td>
-                {printer.label}
-                {printer.isDefault && (
-                  <span style={{ fontSize: "11px", color: "var(--primary)", marginLeft: "6px" }}>
-                    Default
-                  </span>
-                )}
-              </td>
-              <td>{printer.connectionType.toUpperCase()}</td>
-              <td>{printer.address}</td>
-              <td>{printer.paperWidth}mm</td>
-              <td>{printer.role === "or" ? "OR Printer" : printer.role === "report" ? "Report" : "Both"}</td>
-              <td>
-                <span className={`printer-status-dot ${printer.status}`} />
-                {statusLabel(printer.status)}
-              </td>
-              <td style={{ display: "flex", gap: "6px" }}>
-                <button className="primary" onClick={() => testPrint(printer)} style={{ fontSize: "12px", padding: "4px 10px" }}>
-                  Test Print
-                </button>
-                {printer.connectionType === "lan" && (
+          {printers.map((printer) => {
+            const defaultLabel = getPrinterDefaultLabel(printer);
+
+            return (
+              <tr key={printer.id}>
+                <td>
+                  {printer.label}
+                  {defaultLabel ? (
+                    <span style={{ fontSize: "11px", color: "var(--primary)", marginLeft: "6px" }}>
+                      {defaultLabel}
+                    </span>
+                  ) : null}
+                </td>
+                <td>{printer.connectionType.toUpperCase()}</td>
+                <td>{printer.address}</td>
+                <td>{printer.paperWidth}mm</td>
+                <td>{printer.role === "or" ? "OR Printer" : printer.role === "report" ? "Report" : "Both"}</td>
+                <td>
+                  <span className={`printer-status-dot ${printer.status}`} />
+                  {statusLabel(printer.status)}
+                </td>
+                <td style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  <button className="primary" onClick={() => testPrint(printer)} style={{ fontSize: "12px", padding: "4px 10px" }}>
+                    Test Print
+                  </button>
+                  <button onClick={() => setSelectedPrinterId(printer.id)} style={{ fontSize: "12px", padding: "4px 10px" }}>
+                    Edit Layout
+                  </button>
+                  {(printer.role === "or" || printer.role === "both") && (
+                    <button
+                      onClick={() => setDefault(printer.id, "or")}
+                      disabled={Boolean(printer.defaultForOr)}
+                      style={{ fontSize: "12px", padding: "4px 10px" }}
+                    >
+                      Default OR
+                    </button>
+                  )}
+                  {(printer.role === "report" || printer.role === "both") && (
+                    <button
+                      onClick={() => setDefault(printer.id, "report")}
+                      disabled={Boolean(printer.defaultForReport)}
+                      style={{ fontSize: "12px", padding: "4px 10px" }}
+                    >
+                      Default Report
+                    </button>
+                  )}
+                  {printer.connectionType === "lan" && (
+                    <button
+                      className="secondary"
+                      onClick={async () => {
+                        const { LanBridgeBackend } = await import("@/lib/printer/lan-bridge-service");
+                        const backend = new LanBridgeBackend();
+                        const result = await backend.connect(printer);
+                        setToast(result.status === "success" ? "Bridge reachable" : `Bridge unreachable: ${result.status}`);
+                      }}
+                      style={{ fontSize: "12px", padding: "4px 10px" }}
+                    >
+                      Test Bridge
+                    </button>
+                  )}
                   <button
-                    className="secondary"
-                    onClick={async () => {
-                      const { LanBridgeBackend } = await import("@/lib/printer/lan-bridge-service");
-                      const backend = new LanBridgeBackend();
-                      const res = await backend.connect(printer);
-                      setToast(res.status === "success" ? "Bridge reachable" : `Bridge unreachable: ${res.status}`);
-                    }}
+                    className="danger"
+                    onClick={() => deletePrinter(printer.id)}
                     style={{ fontSize: "12px", padding: "4px 10px" }}
                   >
-                    Test Bridge
+                    Delete
                   </button>
-                )}
-                <button
-                  className="danger"
-                  onClick={() => deletePrinter(printer.id)}
-                  style={{ fontSize: "12px", padding: "4px 10px" }}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
-      {/* Receipt Layout Panel (PR-3) */}
       <div className="receipt-layout-section">
         <h3>Receipt Layout</h3>
-
-        <div className="logo-upload-area">
-          <span>Upload Logo</span>
-          <input
-            type="file"
-            accept="image/*"
-            style={{ position: "absolute", opacity: 0, width: 0, height: 0 }}
-          />
-        </div>
+        {selectedPrinter ? (
+          <p style={{ color: "var(--muted)", marginBottom: 12 }}>
+            Editing saved layout for <strong>{selectedPrinter.label}</strong>.
+          </p>
+        ) : (
+          <p style={{ color: "var(--muted)", marginBottom: 12 }}>
+            Add a printer to configure saved receipt layout defaults.
+          </p>
+        )}
 
         <div className="form-grid">
+          <label className="input-label">
+            Layout Printer
+            <select
+              value={selectedPrinterId}
+              onChange={(event) => setSelectedPrinterId(event.target.value)}
+              disabled={printers.length === 0}
+            >
+              <option value="">Select a printer</option>
+              {printers.map((printer) => (
+                <option key={printer.id} value={printer.id}>
+                  {printer.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="logo-upload-area">
+            <span>Logo upload stays placeholder in this phase</span>
+          </div>
+
           <label className="input-label">
             Header Lines
             <textarea
               value={headerLines}
-              onChange={(e) => setHeaderLines(e.target.value)}
+              onChange={(event) => setHeaderLines(event.target.value)}
               placeholder="Additional header lines"
               rows={2}
+              disabled={!selectedPrinter}
             />
           </label>
+
           <label className="input-label">
             Footer Lines
             <textarea
               value={footerLines}
-              onChange={(e) => setFooterLines(e.target.value)}
-              placeholder="e.g. Thank you! Come again"
+              onChange={(event) => setFooterLines(event.target.value)}
+              placeholder="Thank you! Come again"
               rows={2}
+              disabled={!selectedPrinter}
             />
           </label>
 
-          {/* Auto-Cut toggle (PR-27) */}
           <div className="toggle-row">
             <div
               className={`toggle-switch ${autoCut ? "active" : ""}`}
               onClick={() => {
+                if (!selectedPrinter) {
+                  return;
+                }
                 setAutoCut(!autoCut);
-                if (autoCut) setPartialCut(false);
+                if (autoCut) {
+                  setPartialCut(false);
+                }
               }}
               role="switch"
               aria-checked={autoCut}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setAutoCut(!autoCut);
-                  if (autoCut) setPartialCut(false);
-                }
-              }}
+              tabIndex={selectedPrinter ? 0 : -1}
             />
             <span>Auto-Cut</span>
           </div>
 
-          {/* Partial Cut toggle (PR-27) */}
           <div className="toggle-row">
             <div
-              className={`toggle-switch ${partialCut ? "active" : ""} ${!autoCut ? "" : ""}`}
+              className={`toggle-switch ${partialCut ? "active" : ""}`}
               onClick={() => {
-                if (autoCut) setPartialCut(!partialCut);
+                if (!selectedPrinter || !autoCut) {
+                  return;
+                }
+                setPartialCut(!partialCut);
               }}
               role="switch"
               aria-checked={partialCut}
-              aria-disabled={!autoCut}
-              tabIndex={0}
-              style={!autoCut ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
-              onKeyDown={(e) => {
-                if (autoCut && (e.key === "Enter" || e.key === " ")) {
-                  e.preventDefault();
-                  setPartialCut(!partialCut);
-                }
-              }}
+              aria-disabled={!selectedPrinter || !autoCut}
+              tabIndex={selectedPrinter ? 0 : -1}
+              style={!selectedPrinter || !autoCut ? { opacity: 0.45, cursor: "not-allowed" } : undefined}
             />
-            <span style={!autoCut ? { opacity: 0.45 } : undefined}>Partial Cut</span>
+            <span style={!selectedPrinter || !autoCut ? { opacity: 0.45 } : undefined}>Partial Cut</span>
           </div>
 
-          {/* Max Receipt Length (PR-26) */}
           <label className="input-label">
             Max Receipt Lines
             <input
               type="number"
               value={maxReceiptLines}
-              onChange={(e) => setMaxReceiptLines(Number(e.target.value))}
+              onChange={(event) => setMaxReceiptLines(Number(event.target.value))}
               min={10}
+              disabled={!selectedPrinter}
             />
           </label>
 
           <div className="toggle-row">
             <div
               className={`toggle-switch ${autoCondense ? "active" : ""}`}
-              onClick={() => setAutoCondense(!autoCondense)}
+              onClick={() => {
+                if (!selectedPrinter) {
+                  return;
+                }
+                setAutoCondense(!autoCondense);
+              }}
               role="switch"
               aria-checked={autoCondense}
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setAutoCondense(!autoCondense);
-                }
-              }}
+              tabIndex={selectedPrinter ? 0 : -1}
             />
             <span>Auto-condense long receipts</span>
           </div>
         </div>
+
+        <div className="settings-actions" style={{ marginTop: 12 }}>
+          <button className="primary" onClick={saveLayout} disabled={!selectedPrinter}>
+            Save Layout
+          </button>
+        </div>
       </div>
 
-      {/* Toast notification */}
       {toast && <div className="toast-notification">{toast}</div>}
     </section>
   );

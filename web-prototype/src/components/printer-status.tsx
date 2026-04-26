@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PrinterProfile, PrinterStatusType } from "@/lib/types";
 import { getAll } from "@/lib/db";
-import { PrinterService, createPrinterBackend } from "@/lib/printer";
+import { PrinterService, createPrinterBackend, resolvePrinterForRole } from "@/lib/printer";
 
 const POLL_INTERVAL_MS = 30000;
 const INITIAL_BACKOFF_MS = 2000;
@@ -23,11 +23,6 @@ const chipClass: Record<PrinterStatusType, string> = {
   error: "error"
 };
 
-function getDefaultOrPrinter(profiles: PrinterProfile[]): PrinterProfile | undefined {
-  return profiles.find((p) => p.isDefault && (p.role === "or" || p.role === "both")) ??
-    profiles.find((p) => p.role === "or" || p.role === "both");
-}
-
 export function PrinterStatusIndicator() {
   const [status, setStatus] = useState<PrinterStatusType>("offline");
   const [printer, setPrinter] = useState<PrinterProfile | null>(null);
@@ -43,7 +38,7 @@ export function PrinterStatusIndicator() {
     }
 
     const profiles = await getAll("printerProfiles");
-    const defaultPrinter = getDefaultOrPrinter(profiles);
+    const defaultPrinter = resolvePrinterForRole(profiles, "or");
     if (defaultPrinter) {
       setPrinter(defaultPrinter);
     }

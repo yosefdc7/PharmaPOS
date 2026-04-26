@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { isLowStock, isExpired, isNearExpiry, daysUntilExpiry, money } from "@/lib/calculations";
 import { usePosStore } from "@/lib/use-pos-store";
-import type { Category, Customer, PaymentMethod, Product, Settings, User } from "@/lib/types";
+import type { BirSettings, Category, Customer, PaymentMethod, Product, Settings, User } from "@/lib/types";
 import { BirSettingsPanel } from "./bir-settings";
 import { PrinterSettingsPanel } from "./printer-settings";
 import { BirReportsPanel } from "./bir-reports";
@@ -12,7 +12,8 @@ import { PrinterStatusIndicator } from "./printer-status";
 import { ReprintQueue } from "./reprint-queue";
 import { PrintFailureModal } from "./print-failure-modal";
 import { ReceiptPreview } from "./receipt-preview";
-import { PrinterService, createPrinterBackend, buildReceipt, enqueuePrintJob } from "@/lib/printer";
+import { buildReceipt, createPrinterBackend, enqueuePrintJob, getReceiptLayoutOptions, markJobStatus, PrinterService, removeJob } from "@/lib/printer";
+import { getOne } from "@/lib/db";
 import { ScpwdDiscountModal } from "./scpwd-discount-modal";
 import { ScpwdBreakdownCard } from "./scpwd-breakdown-card";
 import { ScpwdEligibilityWarning } from "./scpwd-eligibility-warning";
@@ -540,21 +541,33 @@ export function PosPrototype() {
           onRetry={async () => {
             const failure = store.printFailure;
             if (!failure) return;
-            const { transaction, printer } = failure;
+            const { transaction, printer, queueJobId } = failure;
             if (!printer || !transaction) return;
             const service = new PrinterService(createPrinterBackend);
             const connectResult = await service.connect(printer);
+            const bir = (await getOne("birSettings", "bir")) as BirSettings | undefined;
+            const commands = buildReceipt("normal", printer, bir, transaction, getReceiptLayoutOptions(printer));
             if (connectResult.status === "success") {
-              const commands = buildReceipt("normal", printer, undefined, transaction);
               const printResult = await service.print(commands);
               await service.disconnect();
               if (printResult.status === "success") {
+                if (queueJobId) {
+                  await removeJob(queueJobId);
+                }
                 store.clearPrintFailure();
               } else {
-                await enqueuePrintJob(Number(transaction.localNumber), transaction.id, commands, printer.id);
+                if (queueJobId) {
+                  await markJobStatus(queueJobId, "failed", printResult.status);
+                } else {
+                  await enqueuePrintJob(Number(transaction.localNumber), transaction.id, "normal", commands, printer.id);
+                }
               }
             } else {
-              await enqueuePrintJob(Number(transaction.localNumber), transaction.id, new Uint8Array(0), printer.id);
+              if (queueJobId) {
+                await markJobStatus(queueJobId, "failed", `Connection: ${connectResult.status}`);
+              } else {
+                await enqueuePrintJob(Number(transaction.localNumber), transaction.id, "normal", commands, printer.id);
+              }
             }
           }}
           onSkip={() => {
