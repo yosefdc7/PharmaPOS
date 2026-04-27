@@ -1,0 +1,19 @@
+// Kombai Tech Stack Configuration
+// Each value must be a string or an array of strings.
+// Example: "Framework": "Vite" or "Project Type": ["React", "Vue"]
+{
+  "Project Type": "React",
+  "Framework": "NextJS 16",
+  "TS/JS": "JS",
+  "Testing Framework": "Vitest",
+  "HTTP Server Framework": "Express",
+  "Server Runtime": "Node.js v20",
+  "Package Manager": "npm",
+  "context_graphs": [
+    {
+      "type": "local",
+      "path": ".",
+      "name": "PPOS"
+    }
+  ]
+}

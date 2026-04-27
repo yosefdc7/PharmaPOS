@@ -14,7 +14,8 @@ export type PermissionKey =
   | "override"
   | "xReading"
   | "zReadingGenerate"
-  | "zReadingView";
+  | "zReadingView"
+  | "admin";
 
 export type UserRole = "admin" | "supervisor" | "pharmacist" | "cashier";
 
@@ -86,12 +87,16 @@ export type SyncQueueItem = {
   entity: SyncQueueItemEntity;
   operation: "create" | "update" | "delete";
   payload: unknown;
+  encrypted?: {
+    ciphertext: string;
+    iv: string;
+  };
   createdAt: string;
   status: SyncStatus;
   retryCount: number;
   lastAttemptAt?: string;
   lastError: string;
-  entityVersion: number;
+  entityVersion?: number;
   resolvedConflict?: SyncConflict;
 };
 
@@ -252,11 +257,12 @@ export type Customer = {
 
 export type User = {
   id: string;
-  version: number;
+  version?: number;
   username: string;
   fullname: string;
   role: UserRole;
   permissions: Record<PermissionKey, boolean>;
+  prcNumber?: string;
 };
 
 export type AuthSession = {
@@ -387,6 +393,7 @@ export type CartTotals = {
 // === BIR Compliance Types ===
 
 export type BirSettings = {
+  id?: string;
   tin: string;
   registeredName: string;
   registeredAddress: string;
@@ -476,6 +483,8 @@ export type ZReading = XReading & {
   resetFlag: boolean;
   overrideReason?: string;
   overrideBy?: string;
+  isOverridden?: boolean;
+  overriddenAt?: string;
   pdfPath?: string;
 };
 

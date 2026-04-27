@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { DEFAULT_FEATURE_FLAGS, mergeFeatureFlags, type FeatureFlags } from "./feature-flags";
+import { encryptPayload, payloadContainsPhi, type EncryptedData } from "./encryption";
 import {
+  seedBirSettings,
   seedCategories,
   seedCustomers,
   seedProducts,
@@ -35,7 +37,7 @@ import type {
 } from "./types";
 
 const DB_NAME = "pharmaspot-web-prototype";
-const DB_VERSION = 8;
+const DB_VERSION = 7;
 const SESSION_KEY = "pharmapos.auth.session";
 const AUTO_LOGIN_SUPPRESS_KEY = "pharmapos.auth.suppressAutoLogin";
 const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -54,7 +56,6 @@ export type LocalUserUpsert = {
 
 export type StoreName =
   | "meta"
-  | "syncMeta"
   | "products"
   | "categories"
   | "customers"
@@ -76,7 +77,6 @@ export type StoreName =
 
 const STORES: StoreName[] = [
   "meta",
-  "syncMeta",
   "products",
   "categories",
   "customers",
@@ -99,7 +99,6 @@ const STORES: StoreName[] = [
 
 type StoreEntityMap = {
   meta: { id: string; value: unknown };
-  syncMeta: { id: string; value: string };
   products: Product;
   categories: Category;
   customers: Customer;
@@ -173,16 +172,29 @@ export function shouldAutoLogin(): boolean {
   return window.sessionStorage.getItem(AUTO_LOGIN_SUPPRESS_KEY) !== "1";
 }
 
-function ensureStores(db: IDBDatabase): void {
+function ensureStores(db: IDBDatabase, tx: IDBTransaction): void {
   for (const storeName of STORES) {
+    let store: IDBObjectStore;
     if (!db.objectStoreNames.contains(storeName)) {
-      db.createObjectStore(storeName, { keyPath: "id" });
+      store = db.createObjectStore(storeName, { keyPath: "id" });
+    } else {
+      store = tx.objectStore(storeName);
+    }
+    // Ensure secondary indexes for sync and query performance
+    if (storeName === "syncQueue" && !store.indexNames.contains("status")) {
+      store.createIndex("status", "status", { unique: false });
+    }
+    if (storeName === "transactions" && !store.indexNames.contains("createdAt")) {
+      store.createIndex("createdAt", "createdAt", { unique: false });
+    }
+    if (storeName === "products" && !store.indexNames.contains("barcode")) {
+      store.createIndex("barcode", "barcode", { unique: false });
     }
   }
 }
 
 function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number): void {
-  ensureStores(db);
+  ensureStores(db, tx);
 
   // V2 rollout (backward compatible): additive metadata for kill-switch flags.
   if (oldVersion < 2) {
@@ -224,71 +236,9 @@ function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number
     tx.objectStore("meta").put({ id: "schemaVersion", value: 6 });
   }
 
-  // V7: add entityVersion and resolvedConflict to syncQueue items
+  // V7: add secondary indexes for syncQueue, transactions, and products
   if (oldVersion < 7) {
-    const syncStore = tx.objectStore("syncQueue");
-    const cursor = syncStore.openCursor();
-    cursor.onsuccess = (event) => {
-      const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
-      if (result) {
-        const value = result.value as SyncQueueItem;
-        if (typeof value.entityVersion !== "number") {
-          value.entityVersion = 1;
-          syncStore.put(value);
-        }
-        result.continue();
-      }
-    };
     tx.objectStore("meta").put({ id: "schemaVersion", value: 7 });
-  }
-
-  // V8: add syncMeta store, entity versions, and syncQueue retry metadata
-  if (oldVersion < 8) {
-    const syncMetaStore = tx.objectStore("syncMeta");
-    syncMetaStore.put({ id: "global:lastPullTimestamp", value: "" });
-
-    const versionedStores: Array<"products" | "categories" | "customers" | "users" | "settings" | "transactions" | "heldOrders"> = [
-      "products",
-      "categories",
-      "customers",
-      "users",
-      "settings",
-      "transactions",
-      "heldOrders"
-    ];
-
-    for (const storeName of versionedStores) {
-      const store = tx.objectStore(storeName);
-      const cursor = store.openCursor();
-      cursor.onsuccess = (event) => {
-        const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
-        if (!result) return;
-        const value = result.value as Record<string, unknown>;
-        if (typeof value.version !== "number") {
-          value.version = 1;
-          store.put(value);
-        }
-        result.continue();
-      };
-    }
-
-    const syncStore = tx.objectStore("syncQueue");
-    const cursor = syncStore.openCursor();
-    cursor.onsuccess = (event) => {
-      const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
-      if (!result) return;
-      const value = result.value as SyncQueueItem;
-      if (!value.lastAttemptAt) {
-        value.lastAttemptAt = value.createdAt;
-      }
-      if (typeof value.entityVersion !== "number") {
-        value.entityVersion = 1;
-      }
-      syncStore.put(value);
-      result.continue();
-    };
-
-    tx.objectStore("meta").put({ id: "schemaVersion", value: 8 });
   }
 }
 
@@ -323,6 +273,21 @@ export function completeTransaction(tx: IDBTransaction): Promise<void> {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+}
+
+export async function getByIndex<TStore extends StoreName>(
+  storeName: TStore,
+  indexName: string,
+  query: IDBValidKey
+): Promise<StoreEntityMap[TStore][]> {
+  const db = await openPosDb();
+  const store = db.transaction(storeName, "readonly").objectStore(storeName);
+  const index = store.index(indexName);
+  const result = await promisifyRequest(index.getAll(query));
+  if (storeName === "users") {
+    return (result as unknown[]).filter(isStoredUser).map(sanitizeUser) as StoreEntityMap[TStore][];
+  }
+  return result;
 }
 
 export async function getAll<TStore extends StoreName>(
@@ -389,6 +354,15 @@ export async function putMany<TStore extends StoreName>(
   await completeTransaction(tx);
 }
 
+// Dedicated function for storing users with password hashes (type-safe, avoids cast bypass)
+export async function putManyUsers(values: StoredUser[]): Promise<void> {
+  const db = await openPosDb();
+  const tx = db.transaction("users", "readwrite");
+  const store = tx.objectStore("users");
+  values.forEach((value) => store.put(value));
+  await completeTransaction(tx);
+}
+
 export async function saveLocalUserAccount(input: LocalUserUpsert): Promise<User> {
   const normalizedUsername = input.username.trim();
   const normalizedFullname = input.fullname.trim();
@@ -411,7 +385,6 @@ export async function saveLocalUserAccount(input: LocalUserUpsert): Promise<User
 
   const storedUser: StoredUser = {
     id: input.id ?? crypto.randomUUID(),
-    version: existing ? existing.version + 1 : 1,
     username: normalizedUsername,
     fullname: normalizedFullname,
     role: input.role,
@@ -445,21 +418,12 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<Fea
 }
 
 export async function enqueueSync(
-  item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError" | "entityVersion" | "lastAttemptAt">
+  item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError">
 ): Promise<SyncQueueItem> {
-  const storeName = ENTITY_STORE_MAP[item.entity];
-  const payload = item.payload as Record<string, unknown>;
-  const payloadVersion = typeof payload.version === "number" ? payload.version : undefined;
-  let entityVersion = item.operation === "create" ? 1 : payloadVersion ?? 1;
-
-  if (storeName && item.operation !== "create" && payloadVersion === undefined) {
-    const entityId = getEntityIdForSync(item.payload);
-    if (entityId) {
-      const existing = await getOne(storeName as StoreName, entityId).catch(() => undefined);
-      if (existing && typeof (existing as { version?: unknown }).version === "number") {
-        entityVersion = ((existing as { version: number }).version + 1);
-      }
-    }
+  // Auto-encrypt PHI payloads before storing in sync queue
+  let encrypted: EncryptedData | undefined;
+  if (payloadContainsPhi(item.payload)) {
+    encrypted = await encryptPayload(item.payload);
   }
 
   const syncItem: SyncQueueItem = {
@@ -467,33 +431,12 @@ export async function enqueueSync(
     createdAt: new Date().toISOString(),
     status: "pending",
     retryCount: 0,
-    lastAttemptAt: new Date().toISOString(),
     lastError: "",
-    entityVersion,
-    ...item
+    ...item,
+    encrypted
   };
   await putOne("syncQueue", syncItem);
   return syncItem;
-}
-
-const ENTITY_STORE_MAP: Record<SyncQueueItem["entity"], string> = {
-  product: "products",
-  category: "categories",
-  customer: "customers",
-  user: "users",
-  settings: "settings",
-  transaction: "transactions",
-  "held-order": "heldOrders",
-};
-
-function getEntityIdForSync(payload: unknown): string | undefined {
-  if (typeof payload === "object" && payload !== null && "id" in payload) {
-    return (payload as Record<string, unknown>).id as string;
-  }
-  if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] === "object" && payload[0] !== null && "id" in payload[0]) {
-    return (payload[0] as Record<string, unknown>).id as string;
-  }
-  return undefined;
 }
 
 export async function markPendingSyncAsSynced(): Promise<void> {
@@ -512,6 +455,18 @@ export async function markPendingSyncAsSynced(): Promise<void> {
   );
 }
 
+export async function getLastPullTimestamp(entity?: string): Promise<string | null> {
+  const key = entity ? `${entity}:lastPullTimestamp` : "global:lastPullTimestamp";
+  const meta = await getOne("meta", key);
+  if (!meta || typeof meta.value !== "string" || !meta.value) return null;
+  return meta.value;
+}
+
+export async function setLastPullTimestamp(timestamp: string, entity?: string): Promise<void> {
+  const key = entity ? `${entity}:lastPullTimestamp` : "global:lastPullTimestamp";
+  await putOne("meta", { id: key, value: timestamp });
+}
+
 export async function markTransactionsAsSynced(transactionIds: string[]): Promise<void> {
   if (transactionIds.length === 0) return;
   const unique = new Set(transactionIds);
@@ -527,23 +482,11 @@ export async function markTransactionsAsSynced(transactionIds: string[]): Promis
   }
 }
 
-export async function getLastPullTimestamp(entity?: string): Promise<string | null> {
-  const key = entity ? `${entity}:lastPullTimestamp` : "global:lastPullTimestamp";
-  const meta = await getOne("syncMeta", key);
-  if (!meta || typeof meta.value !== "string" || !meta.value) return null;
-  return meta.value;
-}
-
-export async function setLastPullTimestamp(timestamp: string, entity?: string): Promise<void> {
-  const key = entity ? `${entity}:lastPullTimestamp` : "global:lastPullTimestamp";
-  await putOne("syncMeta", { id: key, value: timestamp });
-}
-
 export async function purgeSyncedItems(olderThanMs = 7 * 86400000): Promise<number> {
   const cutoff = Date.now() - olderThanMs;
-  const queue = await getAll("syncQueue");
-  const staleIds = queue
-    .filter((item) => item.status === "synced" && new Date(item.createdAt).getTime() <= cutoff)
+  const synced = await getByIndex("syncQueue", "status", "synced");
+  const staleIds = synced
+    .filter((item) => new Date(item.createdAt).getTime() <= cutoff)
     .map((item) => item.id);
 
   if (staleIds.length === 0) return 0;
@@ -556,11 +499,6 @@ export async function purgeSyncedItems(olderThanMs = 7 * 86400000): Promise<numb
   }
   await completeTransaction(tx);
   return staleIds.length;
-}
-
-export async function getConflictItems(): Promise<SyncQueueItem[]> {
-  const queue = await getAll("syncQueue");
-  return queue.filter((item) => item.status === "conflict");
 }
 
 export function readSession(): AuthSession | null {
@@ -685,7 +623,7 @@ export async function seedIfNeeded(): Promise<void> {
     );
     const hasMissingHashes = nextUsers.some((user, index) => !isStoredUser((rawUsers as Array<User | StoredUser>)[index]));
     if (hasMissingHashes) {
-      await putMany("users", nextUsers as unknown as User[]);
+      await putManyUsers(nextUsers);
     }
     return;
   }
@@ -699,10 +637,11 @@ export async function seedIfNeeded(): Promise<void> {
       passwordHash: await bcrypt.hash(defaultPasswordForUser(user), BCRYPT_SALT_ROUNDS)
     }))
   );
-  await putMany("users", seededUsers as unknown as User[]);
+  await putManyUsers(seededUsers);
   await putMany("transactions", seedTransactions);
   await putMany("syncQueue", seedSyncQueue);
   await putOne("settings", seedSettings);
+  await putOne("birSettings", seedBirSettings);
   await putOne("meta", { id: "featureFlags", value: DEFAULT_FEATURE_FLAGS });
   await putOne("meta", { id: "seeded", value: true });
 }
@@ -727,20 +666,16 @@ export async function acknowledgeOverride(
   return ack;
 }
 
-export async function resetPrototypeData(): Promise<void> {
-  const db = await openPosDb();
-  const tx = db.transaction(STORES, "readwrite");
-  for (const storeName of STORES) {
-    tx.objectStore(storeName).clear();
-  }
-  await completeTransaction(tx);
-  await seedIfNeeded();
-}
+// Stores that are protected when hardBlockPrototypeReset is enabled (Rx/DD policy)
+const PROTECTED_STORES = [
+  "rxSettings",
+  "prescriptions",
+  "xReadings",
+  "zReadings",
+  "auditLog",
+  "printerActivity",
+] as const;
 
-/**
- * Atomically write sale data across multiple stores.
- * All writes succeed or all fail together.
- */
 export async function atomicSaleWrite(
   products: Product[],
   transaction: Transaction,
@@ -752,21 +687,85 @@ export async function atomicSaleWrite(
   const db = await openPosDb();
   const tx = db.transaction(storeNames, "readwrite");
 
-  // Update stock for all products
-  const productStore = tx.objectStore("products");
   for (const product of products) {
-    productStore.put(product);
+    tx.objectStore("products").put(product);
   }
 
-  // Save transaction
   tx.objectStore("transactions").put(transaction);
 
-  // Update BIR settings (OR number increment)
   if (birSettings) {
     tx.objectStore("birSettings").put(birSettings);
   }
 
   await completeTransaction(tx);
+}
+
+export async function getConflictItems(): Promise<SyncQueueItem[]> {
+  return getByIndex("syncQueue", "status", "conflict");
+}
+
+export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
+  const results = await getByIndex("products", "barcode", barcode);
+  return results[0] as Product | undefined;
+}
+
+export async function exportAllData(): Promise<Record<string, unknown[]>> {
+  const data: Record<string, unknown[]> = {};
+  for (const storeName of STORES) {
+    if (storeName === "users") {
+      // Export sanitized users (no password hashes)
+      data[storeName] = await getAll(storeName);
+    } else {
+      data[storeName] = await getAll(storeName);
+    }
+  }
+  return data;
+}
+
+export async function importAllData(data: Record<string, unknown[]>): Promise<void> {
+  const db = await openPosDb();
+  const tx = db.transaction(STORES, "readwrite");
+  for (const storeName of STORES) {
+    const store = tx.objectStore(storeName);
+    store.clear();
+    const items = data[storeName] || [];
+    for (const item of items) {
+      store.put(item);
+    }
+  }
+  await completeTransaction(tx);
+}
+
+export async function resetPrototypeData(): Promise<void> {
+  // Read hardBlockPrototypeReset flag before clearing anything
+  const rxSettings = await getOne("rxSettings", "rx-settings");
+  const hardBlock =
+    rxSettings && typeof (rxSettings as { hardBlockPrototypeReset?: unknown }).hardBlockPrototypeReset === "boolean"
+      ? (rxSettings as { hardBlockPrototypeReset: boolean }).hardBlockPrototypeReset
+      : false;
+
+  const db = await openPosDb();
+  const tx = db.transaction(STORES, "readwrite");
+
+  if (hardBlock) {
+    // Only clear stores that are NOT protected
+    const clearableStores = STORES.filter((s) => !PROTECTED_STORES.includes(s as typeof PROTECTED_STORES[number]));
+    for (const storeName of clearableStores) {
+      tx.objectStore(storeName).clear();
+    }
+    // Re-seed birSettings even in protected mode (BIR OR series resets are operational, not Rx/DD)
+    const birSeedTx = db.transaction("birSettings", "readwrite");
+    birSeedTx.objectStore("birSettings").put(seedBirSettings);
+    await completeTransaction(birSeedTx);
+  } else {
+    // Unconditional full reset (prototype mode)
+    for (const storeName of STORES) {
+      tx.objectStore(storeName).clear();
+    }
+  }
+
+  await completeTransaction(tx);
+  await seedIfNeeded();
 }
 
 export async function resetPosDbForTests(): Promise<void> {

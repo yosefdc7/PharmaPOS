@@ -10,7 +10,8 @@ const fmt = (n: number) => `₱${n.toFixed(2)}`;
 
 function computeZReading(
   transactions: Transaction[],
-  bir: BirSettings | undefined
+  bir: BirSettings | undefined,
+  generatedBy: string
 ): Omit<ZReading, "id"> {
   const grossSales = transactions.reduce((sum, t) => sum + t.subtotal, 0);
   const scDiscount = transactions.reduce((sum, t) => sum + (t.scPwdMetadata?.scPwdDiscountAmount ?? 0), 0);
@@ -43,7 +44,7 @@ function computeZReading(
     totalReturns: 0,
     returnAmount: 0,
     netSales,
-    generatedBy: "Current User",
+    generatedBy,
     generatedAt: now.toISOString(),
     storeName: bir?.registeredName ?? "",
     tin: bir?.tin ?? "",
@@ -90,7 +91,8 @@ export function ZReadingReport({
     ]);
     const bir = birRaw as BirSettings | undefined;
     const sorted = txs.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    const computed = computeZReading(sorted, bir);
+    const generatedBy = currentUser?.fullname || "System";
+    const computed = computeZReading(sorted, bir, generatedBy);
     setReading(computed);
     setHistory(
       (zHistory as ZReading[])
@@ -99,7 +101,7 @@ export function ZReadingReport({
     );
     const today = new Date().toISOString().slice(0, 10);
     setZGeneratedToday(zHistory.some((z) => z.reportDate === today));
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     loadAndCompute();
@@ -109,6 +111,23 @@ export function ZReadingReport({
     if (!reading) return;
     setGenerating(true);
     try {
+      // If this is an override, mark the previous Z-Reading as overridden
+      if (override) {
+        const today = new Date().toISOString().slice(0, 10);
+        const zHistory = await getAll("zReadings") as ZReading[];
+        const existingToday = zHistory.filter(r => r.reportDate === today && !r.isOverridden);
+        if (existingToday.length > 0) {
+          const previous = existingToday[0];
+          await putOne("zReadings", {
+            ...previous,
+            isOverridden: true,
+            overriddenAt: new Date().toISOString(),
+            overrideBy: override.supervisorName,
+            overrideReason: override.reason
+          });
+        }
+      }
+
       const report: ZReading = {
         ...reading,
         id: crypto.randomUUID(),

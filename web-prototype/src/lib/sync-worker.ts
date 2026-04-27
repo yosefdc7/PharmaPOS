@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import {
   getAll,
+  getByIndex,
   getFeatureFlags,
   getLastPullTimestamp,
   getOne,
@@ -68,6 +69,19 @@ type SyncReport = {
   retries: number;
   results: SyncResult[];
   pull: PullReport;
+};
+
+type RemoteProcessResponse = {
+  success: boolean;
+  processed: number;
+  results: Array<{
+    id: string;
+    entity: SyncQueueItem["entity"];
+    operation: SyncQueueItem["operation"];
+    status: "synced" | "failed" | "conflict" | "retry";
+    error?: string;
+    conflict?: SyncConflict;
+  }>;
 };
 
 let autoSyncCleanup: (() => void) | null = null;
@@ -134,63 +148,42 @@ export function validatePayload(entity: SyncQueueItemEntity, operation: SyncQueu
   return null;
 }
 
-async function fetchRemoteEntity(
-  entity: SyncQueueItem["entity"],
-  entityId: string
-): Promise<{ type: "not_found" } | { type: "error"; message: string } | { type: "found"; version: number; data: unknown }> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const endpoint = ENTITY_API_MAP[entity];
-    const response = await fetch(`${BASE}/api/${endpoint}/${encodeURIComponent(entityId)}`, {
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (!response.ok) {
-      if (response.status === 404) return { type: "not_found" };
-      return { type: "error", message: `Remote fetch failed: ${response.status}` };
-    }
-    const data = await response.json();
-    return { type: "found", version: payloadVersion(data), data };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Network error";
-    return { type: "error", message };
-  }
-}
+async function submitSyncBatch(items: SyncQueueItem[]): Promise<void> {
+  if (items.length === 0) return;
 
-async function pushToRemote(item: SyncQueueItem): Promise<void> {
-  const endpoint = ENTITY_API_MAP[item.entity];
-  const entityId = getEntityId(item.payload);
-
-  const body: Record<string, unknown> = {
-    ...(typeof item.payload === "object" && item.payload !== null ? (item.payload as Record<string, unknown>) : {}),
-    version: item.entityVersion,
-  };
-
-  let response: Response;
-  if (item.operation === "create") {
-    response = await fetch(`${BASE}/api/${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } else if (item.operation === "delete") {
-    response = await fetch(`${BASE}/api/${endpoint}/${encodeURIComponent(entityId)}`, {
-      method: "DELETE",
-    });
-  } else {
-    response = await fetch(`${BASE}/api/${endpoint}/${encodeURIComponent(entityId)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  }
+  const response = await fetch(`${BASE}/api/sync-queue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(items),
+  });
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
-    throw new Error(`Remote push failed: ${response.status} ${response.statusText} ${errorText}`);
+    throw new Error(`Remote queue submit failed: ${response.status} ${response.statusText} ${errorText}`);
   }
+
+  const body = (await response.json().catch(() => ({}))) as { rejected?: Array<{ reason?: string }> };
+  if (Array.isArray(body.rejected) && body.rejected.length > 0) {
+    throw new Error(body.rejected[0]?.reason || "Remote queue rejected one or more sync items.");
+  }
+}
+
+async function triggerRemoteProcess(
+  strategy: ConflictResolutionStrategyType,
+  maxItems: number
+): Promise<RemoteProcessResponse> {
+  const response = await fetch(`${BASE}/api/sync/process`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ strategy, maxItems }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`Remote process failed: ${response.status} ${response.statusText} ${errorText}`);
+  }
+
+  return (await response.json()) as RemoteProcessResponse;
 }
 
 export function detectConflict(
@@ -203,7 +196,7 @@ export function detectConflict(
         syncItemId: item.id,
         entity: item.entity,
         entityId: getEntityId(item.payload),
-        localVersion: item.entityVersion,
+        localVersion: item.entityVersion ?? 1,
         remoteVersion: remote.version,
         localPayload: item.payload,
         remotePayload: remote.data,
@@ -213,12 +206,12 @@ export function detectConflict(
   }
 
   if (item.operation === "delete") {
-    if (remote.data !== null && remote.version > item.entityVersion) {
+    if (remote.data !== null && remote.version > (item.entityVersion ?? 1)) {
       return {
         syncItemId: item.id,
         entity: item.entity,
         entityId: getEntityId(item.payload),
-        localVersion: item.entityVersion,
+        localVersion: item.entityVersion ?? 1,
         remoteVersion: remote.version,
         localPayload: item.payload,
         remotePayload: remote.data,
@@ -227,12 +220,12 @@ export function detectConflict(
     return null;
   }
 
-  if (remote.version > item.entityVersion) {
+  if (remote.version > (item.entityVersion ?? 1)) {
     return {
       syncItemId: item.id,
       entity: item.entity,
       entityId: getEntityId(item.payload),
-      localVersion: item.entityVersion,
+      localVersion: item.entityVersion ?? 1,
       remoteVersion: remote.version,
       localPayload: item.payload,
       remotePayload: remote.data,
@@ -342,7 +335,7 @@ export function mergeEntityPayload(
 
 export async function processSyncItem(
   item: SyncQueueItem,
-  strategy: ConflictResolutionStrategyType
+  _strategy: ConflictResolutionStrategyType
 ): Promise<SyncResult> {
   const validationError = validatePayload(item.entity, item.operation, item.payload);
   if (validationError) {
@@ -356,114 +349,7 @@ export async function processSyncItem(
   }
 
   try {
-    const entityId = getEntityId(item.payload);
-
-    if (item.operation === "create") {
-      const remote = await fetchRemoteEntity(item.entity, entityId);
-      if (remote.type === "error") {
-        return {
-          id: item.id,
-          entity: item.entity,
-          operation: item.operation,
-          status: item.retryCount >= MAX_RETRIES ? "failed" : "retry",
-          error: remote.message,
-        };
-      }
-      if (remote.type === "found" && remote.data) {
-        const conflict = detectConflict(item, { version: remote.version, data: remote.data });
-        if (conflict) {
-          const resolution = await resolveConflict(conflict, item, strategy);
-          if (resolution.action === "manual") {
-            return {
-              id: item.id,
-              entity: item.entity,
-              operation: item.operation,
-              status: "conflict",
-              conflict: { ...conflict },
-            };
-          }
-          if (resolution.action === "apply-remote" && resolution.payload) {
-            await applyRemotePayload(item.entity as SyncQueueItemEntity, resolution.payload);
-            return { id: item.id, entity: item.entity, operation: item.operation, status: "synced" };
-          }
-        }
-      }
-      await pushToRemote(item);
-      return { id: item.id, entity: item.entity, operation: item.operation, status: "synced" };
-    }
-
-    if (item.operation === "delete") {
-      const remote = await fetchRemoteEntity(item.entity, entityId);
-      if (remote.type === "error") {
-        return {
-          id: item.id,
-          entity: item.entity,
-          operation: item.operation,
-          status: item.retryCount >= MAX_RETRIES ? "failed" : "retry",
-          error: remote.message,
-        };
-      }
-      if (remote.type === "found" && remote.version > item.entityVersion) {
-        const conflict = detectConflict(item, { version: remote.version, data: remote.data });
-        if (conflict) {
-          const resolution = await resolveConflict(conflict, item, strategy);
-          if (resolution.action === "manual") {
-            return {
-              id: item.id,
-              entity: item.entity,
-              operation: item.operation,
-              status: "conflict",
-              conflict: { ...conflict },
-            };
-          }
-          if (resolution.action === "apply-remote" && resolution.payload) {
-            await applyRemotePayload(item.entity as SyncQueueItemEntity, resolution.payload);
-            return { id: item.id, entity: item.entity, operation: item.operation, status: "synced" };
-          }
-        }
-      }
-      await pushToRemote(item);
-      return { id: item.id, entity: item.entity, operation: item.operation, status: "synced" };
-    }
-
-    const remote = await fetchRemoteEntity(item.entity, entityId);
-    if (remote.type === "error") {
-      return {
-        id: item.id,
-        entity: item.entity,
-        operation: item.operation,
-        status: item.retryCount >= MAX_RETRIES ? "failed" : "retry",
-        error: remote.message,
-      };
-    }
-    if (remote.type === "found" && remote.version > item.entityVersion) {
-      const conflict = detectConflict(item, { version: remote.version, data: remote.data });
-      if (conflict) {
-        const resolution = await resolveConflict(conflict, item, strategy);
-        if (resolution.action === "manual") {
-          return {
-            id: item.id,
-            entity: item.entity,
-            operation: item.operation,
-            status: "conflict",
-            conflict: { ...conflict },
-          };
-        }
-        if (resolution.action === "apply-remote" && resolution.payload) {
-          await applyRemotePayload(item.entity as SyncQueueItemEntity, resolution.payload);
-          return { id: item.id, entity: item.entity, operation: item.operation, status: "synced" };
-        }
-        if (resolution.action === "merge") {
-          const mergedPayload = mergeEntityPayload(item.entity as SyncQueueItemEntity, item.payload, conflict.remotePayload);
-          const updatedItem: SyncQueueItem = { ...item, payload: mergedPayload, entityVersion: payloadVersion(mergedPayload) };
-          await pushToRemote(updatedItem);
-          await applyRemotePayload(item.entity as SyncQueueItemEntity, mergedPayload);
-          return { id: item.id, entity: item.entity, operation: item.operation, status: "synced" };
-        }
-      }
-    }
-
-    await pushToRemote(item);
+    await submitSyncBatch([item]);
     return { id: item.id, entity: item.entity, operation: item.operation, status: "synced" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -515,6 +401,11 @@ export async function pullFromRemote(): Promise<PullReport> {
           (item) => item.status === "pending" && item.entity === entity && getEntityId(item.payload) === entityId
         );
 
+        // Check local entity's syncStatus — if pending, local un-synced changes must not be overwritten
+        const localSyncStatus = local && typeof (local as { syncStatus?: unknown }).syncStatus === "string"
+          ? (local as { syncStatus: string }).syncStatus
+          : "synced";
+
         if (!local) {
           await putOne(storeName, remoteEntity as never);
           report.applied++;
@@ -554,7 +445,12 @@ export async function pullFromRemote(): Promise<PullReport> {
           continue;
         }
 
+        // Protect local entities with pending syncStatus from being overwritten by older remote snapshots
         if (remoteVersion > localVersion) {
+          if (localSyncStatus === "pending") {
+            // Local changes are pending upload — skip overwrite; will sync up when push occurs
+            continue;
+          }
           await putOne(storeName, remoteEntity as never);
           report.applied++;
         }
@@ -586,10 +482,9 @@ export async function runSync(
   }
   syncInProgress = true;
   try {
-    const queue = await getAll("syncQueue");
+    const pending = await getByIndex("syncQueue", "status", "pending");
     const nowMs = Date.now();
-    const pending = queue
-      .filter((item) => item.status === "pending")
+    const sorted = pending
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .slice(0, maxItems);
 
@@ -604,16 +499,15 @@ export async function runSync(
     };
 
     const syncedTransactionIds: string[] = [];
+    const submittedItems: SyncQueueItem[] = [];
 
-    for (const item of pending) {
+    for (const item of sorted) {
       if (!shouldProcessNow(item, nowMs)) {
         continue;
       }
 
       const result = await processSyncItem(item, strategy);
       report.processed++;
-      report.results.push(result);
-
       const updatedItem: SyncQueueItem = {
         ...item,
         lastAttemptAt: new Date().toISOString(),
@@ -621,13 +515,9 @@ export async function runSync(
 
       switch (result.status) {
         case "synced":
-          updatedItem.status = "synced";
+          updatedItem.status = "pending";
           updatedItem.lastError = "";
-          report.synced++;
-          if (item.entity === "transaction") {
-            const id = getEntityId(item.payload);
-            if (id) syncedTransactionIds.push(id);
-          }
+          submittedItems.push(updatedItem);
           break;
 
         case "conflict":
@@ -656,6 +546,81 @@ export async function runSync(
       }
 
       await putOne("syncQueue", updatedItem);
+      if (result.status !== "synced") {
+        report.results.push(result);
+      }
+    }
+
+    if (submittedItems.length > 0) {
+      const remoteReport = await triggerRemoteProcess(strategy, submittedItems.length);
+      const remoteResults = Array.isArray(remoteReport.results) ? remoteReport.results : [];
+      const remoteById = new Map(remoteResults.map((result) => [result.id, result]));
+
+      for (const item of submittedItems) {
+        const remoteResult = remoteById.get(item.id);
+        const updatedItem: SyncQueueItem = {
+          ...item,
+          lastAttemptAt: new Date().toISOString(),
+        };
+
+        const normalizedResult: SyncResult = remoteResult
+          ? {
+              id: remoteResult.id,
+              entity: remoteResult.entity,
+              operation: remoteResult.operation,
+              status: remoteResult.status,
+              error: remoteResult.error,
+              conflict: remoteResult.conflict,
+            }
+          : {
+              id: item.id,
+              entity: item.entity,
+              operation: item.operation,
+              status: "retry",
+              error: "Remote processor returned no result for queued item.",
+            };
+
+        switch (normalizedResult.status) {
+          case "synced":
+            updatedItem.status = "synced";
+            updatedItem.lastError = "";
+            report.synced++;
+            if (item.entity === "transaction") {
+              const id = getEntityId(item.payload);
+              if (id) syncedTransactionIds.push(id);
+            }
+            break;
+
+          case "conflict":
+            updatedItem.status = "conflict";
+            updatedItem.resolvedConflict = normalizedResult.conflict;
+            updatedItem.lastError = normalizedResult.error || "Conflict detected by remote sync processor.";
+            report.conflicts++;
+            break;
+
+          case "failed":
+            updatedItem.status = "failed";
+            updatedItem.retryCount = item.retryCount + 1;
+            updatedItem.lastError = normalizedResult.error || "Unknown error";
+            report.failures++;
+            break;
+
+          case "retry":
+            updatedItem.retryCount = item.retryCount + 1;
+            updatedItem.lastError = normalizedResult.error || "Unknown error";
+            if (updatedItem.retryCount >= MAX_RETRIES) {
+              updatedItem.status = "failed";
+              report.failures++;
+            } else {
+              updatedItem.status = "pending";
+              report.retries++;
+            }
+            break;
+        }
+
+        await putOne("syncQueue", updatedItem);
+        report.results.push(normalizedResult);
+      }
     }
 
     if (syncedTransactionIds.length > 0) {
@@ -697,21 +662,32 @@ export async function resolveConflictManually(
   const conflict = item.resolvedConflict;
   const updatedItem = { ...item };
 
-  if (resolution === "local-wins") {
-    await pushToRemote(item);
-    updatedItem.status = "synced";
-    updatedItem.lastError = "";
-  } else if (resolution === "remote-wins") {
-    await applyRemotePayload(item.entity as SyncQueueItemEntity, conflict.remotePayload);
-    updatedItem.status = "synced";
-    updatedItem.lastError = "";
-  } else {
-    const mergedPayload = mergeEntityPayload(item.entity as SyncQueueItemEntity, conflict.localPayload, conflict.remotePayload);
-    await pushToRemote({ ...item, payload: mergedPayload, entityVersion: payloadVersion(mergedPayload) });
-    await applyRemotePayload(item.entity as SyncQueueItemEntity, mergedPayload);
-    updatedItem.status = "synced";
-    updatedItem.lastError = "";
+  const body: Record<string, unknown> = {
+    syncItemId,
+    resolution,
+  };
+  if (resolution === "remote-wins") {
+    body.remotePayload = conflict.remotePayload;
   }
+  if (resolution === "merged") {
+    body.mergedPayload = mergeEntityPayload(item.entity as SyncQueueItemEntity, conflict.localPayload, conflict.remotePayload);
+  }
+
+  const resolutionResponse = await fetch(`${BASE}/api/sync-queue`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resolutionResponse.ok) {
+    const errorText = await resolutionResponse.text().catch(() => "");
+    throw new Error(`Remote conflict resolution failed: ${resolutionResponse.status} ${resolutionResponse.statusText} ${errorText}`);
+  }
+
+  await triggerRemoteProcess("manual", 50);
+  await pullFromRemote();
+
+  updatedItem.status = "synced";
+  updatedItem.lastError = "";
 
   conflict.resolvedAt = new Date().toISOString();
   conflict.resolution = resolution;

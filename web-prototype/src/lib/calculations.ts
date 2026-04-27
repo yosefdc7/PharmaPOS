@@ -33,8 +33,8 @@ export function calculateScPwdDiscountPerItem(
   discountRate: number,
   isVatRegistered: boolean
 ): number {
-  const unitDiscountable = isVatRegistered ? money(originalPrice - (vatRemoved / quantity)) : originalPrice;
-  return money(unitDiscountable * (discountRate / 100) * quantity);
+  const unitDiscountable = isVatRegistered && quantity > 0 ? money(originalPrice - (vatRemoved / quantity)) : originalPrice;
+  return quantity > 0 ? money(unitDiscountable * (discountRate / 100) * quantity) : 0;
 }
 
 export function buildScPwdCartItems(
@@ -67,7 +67,7 @@ export function buildScPwdCartItems(
       scPwdSettings.discountRate,
       scPwdSettings.vatRegistered
     );
-    const finalUnitPrice = money(originalPrice - (vatRemoved / item.quantity) - (discountAmount / item.quantity));
+    const finalUnitPrice = item.quantity > 0 ? money(originalPrice - (vatRemoved / item.quantity) - (discountAmount / item.quantity)) : originalPrice;
 
     return {
       ...item,
@@ -142,12 +142,23 @@ export function calculateChange(total: number, paid: number): number {
 }
 
 export function decrementStock(products: Product[], cart: CartItem[]): Product[] {
-  const cartByProduct = new Map(cart.map((item) => [item.productId, item.quantity]));
+  const productMap = new Map(products.map((p) => [p.id, p]));
+
+  // Detect unknown cart items: productId not in the products array
+  const unknownItems = cart.filter((item) => !productMap.has(item.productId));
+  if (unknownItems.length > 0) {
+    const names = unknownItems.map((i) => i.productName || i.productId).join(", ");
+    throw new Error(`Cannot complete sale: unknown product(s) in cart: ${names}. Stock update requires all products to be registered.`);
+  }
 
   return products.map((product) => {
     if (!product.tracksStock) return product;
-    const sold = cartByProduct.get(product.id) || 0;
-    return { ...product, quantity: Math.max(product.quantity - sold, 0) };
+    const sold = cart.find((item) => item.productId === product.id)?.quantity || 0;
+    const nextQuantity = product.quantity - sold;
+    if (nextQuantity < 0) {
+      throw new Error(`Insufficient stock for ${product.name}: requested ${sold}, available ${product.quantity}`);
+    }
+    return { ...product, quantity: nextQuantity };
   });
 }
 
@@ -186,10 +197,14 @@ export function isNearExpiry(product: Product, thresholdDays: number): boolean {
   return days !== null && days >= 0 && days <= thresholdDays;
 }
 
+let localNumberCounter = 0;
+
 export function makeLocalNumber(prefix = "POS"): string {
   const date = new Date();
   const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(
     date.getDate()
   ).padStart(2, "0")}`;
-  return `${prefix}-${stamp}-${String(Date.now()).slice(-5)}`;
+  const count = String(++localNumberCounter).padStart(3, "0");
+  const random = Math.floor(Math.random() * 1000);
+  return `${prefix}-${stamp}-${String(Date.now()).slice(-4)}-${count}-${String(random).padStart(3, "0")}`;
 }

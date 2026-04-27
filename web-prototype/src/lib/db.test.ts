@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Transaction, BirSettings } from "@/lib/types";
+import type { Transaction, BirSettings, ZReading } from "@/lib/types";
 
 /**
  * Unit tests for Phase 1 backend wiring — OR series logic and X/Z reading computation.
@@ -110,30 +110,30 @@ describe("OR series logic", () => {
   });
 });
 
-describe("X-Reading computation from real transactions", () => {
-  function buildTx(overrides: Partial<Transaction>): Transaction {
-    return {
-      id: overrides.id ?? crypto.randomUUID(),
-      version: overrides.version ?? 1,
-      localNumber: overrides.localNumber ?? "1",
-      customerId: "walk-in",
-      cashierId: "usr-1",
-      createdAt: overrides.createdAt ?? "2026-04-26T08:00:00.000Z",
-      subtotal: overrides.subtotal ?? 100,
-      discount: overrides.discount ?? 0,
-      tax: overrides.tax ?? 12,
-      total: overrides.total ?? 112,
-      paid: overrides.paid ?? 112,
-      change: overrides.change ?? 0,
-      paymentMethod: "cash",
-      paymentStatus: overrides.paymentStatus ?? "paid",
-      paymentReference: "",
-      syncStatus: "pending",
-      remarks: "",
-      items: [],
-    };
-  }
+function buildTx(overrides: Partial<Transaction>): Transaction {
+  return {
+    id: overrides.id ?? crypto.randomUUID(),
+    version: overrides.version ?? 1,
+    localNumber: overrides.localNumber ?? "1",
+    customerId: "walk-in",
+    cashierId: "usr-1",
+    createdAt: overrides.createdAt ?? "2026-04-26T08:00:00.000Z",
+    subtotal: overrides.subtotal ?? 100,
+    discount: overrides.discount ?? 0,
+    tax: overrides.tax ?? 12,
+    total: overrides.total ?? 112,
+    paid: overrides.paid ?? 112,
+    change: overrides.change ?? 0,
+    paymentMethod: "cash",
+    paymentStatus: overrides.paymentStatus ?? "paid",
+    paymentReference: "",
+    syncStatus: "pending",
+    remarks: "",
+    items: [],
+  };
+}
 
+describe("X-Reading computation from real transactions", () => {
   it("computes gross sales and net sales", () => {
     const txs = [
       buildTx({ id: "t1", localNumber: "101", subtotal: 100, total: 112 }),
@@ -224,5 +224,64 @@ describe("X-Reading computation from real transactions", () => {
     expect(result.totalVoids).toBe(0);
     expect(result.beginningOr).toBe(0);
     expect(result.lastOr).toBe(0);
+  });
+});
+
+describe("Z-Reading computation", () => {
+  function computeZReading(txs: Transaction[], orEnd: number): ZReading & { beginningOrNumber: number } {
+    const x = computeXReadingTotals(txs);
+    return {
+      id: `z-${new Date().toISOString().slice(0, 10)}`,
+      reportDate: new Date().toISOString().slice(0, 10),
+      reportTime: new Date().toISOString().slice(11, 16),
+      machineSerial: "SN001",
+      beginningOrNumber: x.beginningOr,
+      lastOrNumber: x.lastOr,
+      endingOrNumber: orEnd,
+      grossSales: x.grossSales,
+      vatableSales: x.grossSales,
+      vatExemptSales: 0,
+      vatAmount: x.vatAmount,
+      zeroRatedSales: 0,
+      scDiscount: x.scDiscount,
+      pwdDiscount: 0,
+      promotionalDiscount: x.totalDiscounts - x.scDiscount,
+      totalDiscounts: x.totalDiscounts,
+      totalVoids: x.totalVoids,
+      voidAmount: x.voidAmount,
+      totalReturns: 0,
+      returnAmount: 0,
+      netSales: x.netSales,
+      generatedBy: "Test",
+      generatedAt: new Date().toISOString(),
+      storeName: "Test Store",
+      tin: "123-456-789-000",
+      ptuNumber: "PTU001",
+      transactionCount: txs.filter((t) => t.paymentStatus === "paid").length,
+      resetFlag: false,
+    };
+  }
+
+  it("computes Z-reading from daily transactions", () => {
+    const txs = [
+      buildTx({ id: "t1", localNumber: "101", subtotal: 100, total: 112 }),
+      buildTx({ id: "t2", localNumber: "102", subtotal: 200, total: 224 }),
+    ];
+    const z = computeZReading(txs, 102);
+    expect(z.grossSales).toBe(300);
+    expect(z.transactionCount).toBe(2);
+    expect(z.beginningOrNumber).toBe(101);
+    expect(z.endingOrNumber).toBe(102);
+  });
+
+  it("includes void amounts in Z-reading", () => {
+    const txs = [
+      buildTx({ id: "t1", localNumber: "101", subtotal: 100, total: 100, paymentStatus: "refunded" }),
+      buildTx({ id: "t2", localNumber: "102", subtotal: 200, total: 200 }),
+    ];
+    const z = computeZReading(txs, 102);
+    expect(z.totalVoids).toBe(1);
+    expect(z.voidAmount).toBe(100);
+    expect(z.netSales).toBe(100);
   });
 });

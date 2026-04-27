@@ -41,6 +41,7 @@ const users: User[] = [
       xReading: true,
       zReadingGenerate: true,
       zReadingView: true,
+      admin: true,
     }
   }
 ];

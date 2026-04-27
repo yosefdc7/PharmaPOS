@@ -65,7 +65,7 @@ Routers are registered from `server.js`:
 | App framework | Next.js + React | Lives in `web-prototype/`; this is the production target UI. |
 | Persistence | Browser IndexedDB | Canonical local data path via `web-prototype/src/lib/db.ts` and `use-pos-store.ts`. Schema v6 with `supervisorAcks` store. |
 | Offline support | Serwist (`@serwist/turbopack`) v9.5.7 | Service worker with precached app shell, stale-while-revalidate for API routes, offline fallback page. Turbopack-compatible via `/serwist/sw.js` route handler. |
-| Offline sync model | Remote sync queue with conflict resolution | Sync worker (`sync-worker.ts`) drains IndexedDB queue to remote API with entity versioning, 4 conflict resolution strategies (LWW, local-wins, remote-wins, manual), and retry logic (max 5). |
+| Offline sync model | Local sync queue | Simulated queue persisted in IndexedDB; no required backend for the default prototype runtime. |
 | Printer support | Web Serial, Web Bluetooth, LAN bridge | ESC/POS generation and queueing are browser-side. |
 | Permissions | `use-permissions.ts` hook | 4 roles (admin, supervisor, pharmacist, cashier), 16 permission keys. Supervisor override flow with audit trail. |
 | Experimental server path | Next.js route handlers + `@libsql/client` | Present in `web-prototype/src/app/api/` and `src/lib/server/` as reference or future migration work, not the default runtime path. |

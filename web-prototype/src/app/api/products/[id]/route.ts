@@ -1,5 +1,6 @@
 import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const PRODUCT_SNAKE_MAP: Record<string, string> = {
@@ -77,10 +78,34 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
+    await requireAuth(request);
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   await ensureDb();
   const db = getDb();
   const { id } = await params;
   const body = await request.json();
+  const bypassVersionGate = request.headers.get("x-sync-source") === "sync-processor";
+
+  const existing = await db.execute({
+    sql: "SELECT * FROM products WHERE id = ?",
+    args: [id],
+  });
+
+  if (!bypassVersionGate && existing.rows.length > 0) {
+    const current = Object.fromEntries(Object.entries(existing.rows[0]).map(([k, v]) => [k, v]));
+    const currentVersion = typeof current.version === "number" ? current.version : Number(current.version ?? 0);
+    const requestedVersion = typeof body.version === "number" ? body.version : Number(body.version ?? 0);
+
+    if (requestedVersion < currentVersion) {
+      return NextResponse.json(
+        { error: "Version conflict", current: camelCaseRow(current) },
+        { status: 409 }
+      );
+    }
+  }
 
   const row = toSnakeCase({ ...body, id, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);
@@ -96,9 +121,14 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
+    await requireAuth(request, "admin");
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   await ensureDb();
   const db = getDb();
   const { id } = await params;

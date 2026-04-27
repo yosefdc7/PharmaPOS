@@ -14,6 +14,34 @@ const ENTITY_TABLE_MAP: Record<string, string> = {
   "held-order": "held_orders",
 };
 
+// Allowlist of valid tables for SQL injection prevention
+const ALLOWED_TABLES = [
+  "products", "categories", "customers", "users",
+  "transactions", "held_orders", "settings"
+] as const;
+
+type AllowedTable = typeof ALLOWED_TABLES[number];
+
+function isAllowedTable(table: string): table is AllowedTable {
+  return ALLOWED_TABLES.includes(table as AllowedTable);
+}
+
+// Column allowlists per table (matching actual database schema)
+const TABLE_COLUMNS: Record<AllowedTable, string[]> = {
+  products: ["id", "version", "name", "barcode", "category_id", "supplier", "price", "original_price", "cost", "quantity", "min_stock", "tracks_stock", "expiration_date", "image_color", "featured", "sc_pwd_eligibility", "vat_exempt", "is_prescription", "drug_classification", "generic_name", "brand_name", "active_ingredient", "dosage_strength", "dosage_form", "fda_cpr_number", "behind_counter", "dd_last_reconciliation_at", "updated_at"],
+  categories: ["id", "name", "version", "updated_at"],
+  customers: ["id", "name", "phone", "email", "created_at", "version", "updated_at"],
+  users: ["id", "version", "username", "fullname", "role", "password_hash", "permissions", "updated_at"],
+  transactions: ["id", "version", "local_number", "items", "customer_id", "cashier_id", "created_at", "subtotal", "discount", "tax", "total", "paid", "change", "payment_method", "payment_status", "payment_reference", "sync_status", "refunded_at", "refund_reason", "refund_reference", "remarks", "sc_pwd_metadata", "updated_at"],
+  held_orders: ["id", "version", "reference", "items", "customer_id", "discount", "remarks", "created_at", "sc_pwd_discount_active", "sc_pwd_draft", "updated_at"],
+  settings: ["id", "version", "store", "address_one", "address_two", "contact", "currency_symbol", "vat_percentage", "charge_tax", "quick_billing", "receipt_footer", "expiry_alert_days", "sc_pwd_settings", "updated_at"],
+};
+
+function validateColumns(table: AllowedTable, columns: string[]): boolean {
+  const allowed = TABLE_COLUMNS[table];
+  return columns.every(col => allowed.includes(col));
+}
+
 function getEntityId(payload: unknown): string {
   if (typeof payload === "object" && payload !== null && "id" in payload) {
     return (payload as Record<string, unknown>).id as string;
@@ -77,6 +105,11 @@ async function upsertEntity(
   const table = ENTITY_TABLE_MAP[entity];
   if (!table) return;
 
+  // Validate table is in allowlist
+  if (!isAllowedTable(table)) {
+    throw new Error(`Invalid table: ${table}`);
+  }
+
   const data = payload as Record<string, unknown>;
   const id = data.id as string;
 
@@ -89,6 +122,12 @@ async function upsertEntity(
   }
 
   const columns = Object.keys(data).filter((k) => k !== "id");
+
+  // Validate columns are in allowlist for this table
+  if (!validateColumns(table, columns)) {
+    throw new Error(`Invalid columns for table ${table}: ${columns.join(", ")}`);
+  }
+
   const placeholders = columns.map(() => "?").join(", ");
   const updates = columns.map((c) => `${c} = excluded.${c}`).join(", ");
   const values = columns.map((c) => data[c]);
@@ -133,7 +172,14 @@ export async function POST(request: NextRequest) {
     args: [maxItems] as InValue[],
   });
 
-  const results: { id: string; entity: string; operation: string; status: string; error?: string }[] = [];
+  const results: {
+    id: string;
+    entity: string;
+    operation: string;
+    status: string;
+    error?: string;
+    conflict?: Record<string, unknown>;
+  }[] = [];
 
   for (const item of pending.rows) {
     const id = item.id as string;
@@ -168,6 +214,11 @@ export async function POST(request: NextRequest) {
       let remoteData: unknown = null;
 
       if (table) {
+        // Validate table is in allowlist
+        if (!isAllowedTable(table)) {
+          throw new Error(`Invalid table: ${table}`);
+        }
+
         const entityId = getEntityId(payload);
         const existing = await db.execute({
           sql: `SELECT * FROM ${table} WHERE id = ?`,
@@ -187,19 +238,20 @@ export async function POST(request: NextRequest) {
 
       if (hasConflict) {
         if (strategy === "manual") {
+          const conflict = {
+            syncItemId: id,
+            entity,
+            entityId: getEntityId(payload),
+            localVersion,
+            remoteVersion,
+            localPayload: payload,
+            remotePayload: remoteData,
+          };
           await db.execute({
             sql: "UPDATE sync_queue SET status = 'conflict', resolved_conflict = ? WHERE id = ?",
-            args: [JSON.stringify({
-              syncItemId: id,
-              entity,
-              entityId: getEntityId(payload),
-              localVersion,
-              remoteVersion,
-              localPayload: payload,
-              remotePayload: remoteData,
-            }), id] as InValue[],
+            args: [JSON.stringify(conflict), id] as InValue[],
           });
-          results.push({ id, entity, operation, status: "conflict" });
+          results.push({ id, entity, operation, status: "conflict", conflict });
           continue;
         }
 

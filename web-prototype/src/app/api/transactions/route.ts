@@ -1,5 +1,6 @@
 import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const TX_CAMEL_MAP: Record<string, string> = {
@@ -91,6 +92,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request); // Any authenticated user
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   await ensureDb();
   const db = getDb();
   const body = await request.json();

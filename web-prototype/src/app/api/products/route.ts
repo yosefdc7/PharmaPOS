@@ -1,6 +1,6 @@
 import { type InValue, getDb } from "@/lib/server/db";
-import { toJsonRow, fromJsonRow } from "@/lib/server/json-columns";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -48,6 +48,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request); // Any authenticated user
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   await ensureDb();
   const db = getDb();
   const body = await request.json();

@@ -25,18 +25,18 @@ This document tracks the validated readiness gaps for the `web-prototype/` produ
 #### Critical
 
 - ~~No service worker yet, so the full app shell is not currently cached for true offline startup.~~ **Resolved 2026-04-26** — Serwist (`@serwist/turbopack`) service worker added with precached app shell, stale-while-revalidate for API routes, and offline fallback page at `/~offline`.
-- ~~Sync queue still resolves locally; there is no real remote queue drain or conflict-resolution path.~~ **Partially resolved 2026-04-26** — Role validation added to API user routes, server-side seed updated with 4 roles and 16 permission keys, `refundTransaction()` now checks permission before executing. Remote sync drain still requires a real backend target.
+- ~~Sync queue still resolves locally; there is no real remote queue drain or conflict-resolution path.~~ **Resolved 2026-04-27** — Client sync now submits IndexedDB queue items to Next.js API `POST /api/sync-queue`, triggers server-side conflict processing via `POST /api/sync/process`, and reconciles via pull; manual resolutions are routed through `PUT /api/sync-queue` with re-process + pull.
 
 #### High
 
 - ~~Role-based permission enforcement is still incomplete in the UI.~~ **Resolved 2026-04-26** — Added supervisor and pharmacist roles, 6 new permission keys (void, refund, override, xReading, zReadingGenerate, zReadingView), `usePermissions()` hook, supervisor override modal with audit trail logging, and role gates on X/Z-Reading reports and BIR tabs. De-duplicated view-access functions. API routes now validate role whitelist.
 - ~~Backup and restore for the web runtime are still missing.~~ **Partially resolved 2026-04-26** — `AuditEntry.requiredRole` updated to include pharmacist, eJournal/eSales tabs now gated by `reports` permission, `refundTransaction()` permission-checked.
 - IndexedDB stores still need secondary indexes for higher-volume production data.
-- Web security hardening still needs CSP and broader form sanitization coverage.
+- ~~Web security hardening still needs CSP and broader form sanitization coverage; entity update routes now reject stale writes (409) unless bypassed by sync processor header.~~ **Partially resolved 2026-04-27** — CSP middleware updated to allow `'unsafe-inline'` for `script-src` (required for Next.js 16 hydration); `ensureStores` bug fixed in IndexedDB migration path; `feature-flags.ts` default flags updated to enable `payments` and `refunds` for demo flow.
 
 #### Medium
 
-- No end-to-end browser test coverage for the full sale flow.
+- ~~No end-to-end browser test coverage for the full sale flow.~~ **Resolved 2026-04-27** — Added Playwright E2E test suite with 9 tests covering product search → add to cart → checkout → payment → receipt generation, plus view navigation and reports verification. Config in `web-prototype/playwright.config.ts`, tests in `web-prototype/e2e/`, runnable via `npm run test:e2e`.
 - Setup and demo-seed behavior still need a production-grade first-run path.
 
 ## Notes

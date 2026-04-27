@@ -25,6 +25,25 @@ function toSnakeRow(obj: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
+const HELD_CAMEL_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(HELD_SNAKE_MAP).map(([k, v]) => [v, k])
+);
+
+function toCamelRow(row: Record<string, unknown>): Record<string, unknown> {
+  const obj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const mapped = HELD_CAMEL_MAP[key] ?? key;
+    if (key === "items" || key === "sc_pwd_draft") {
+      obj[mapped] = typeof value === "string" ? JSON.parse(value) : value;
+    } else if (key === "sc_pwd_discount_active") {
+      obj[mapped] = value === 1;
+    } else {
+      obj[mapped] = value;
+    }
+  }
+  return obj;
+}
+
 export async function GET(request: NextRequest) {
   await ensureDb();
   const db = getDb();
@@ -36,23 +55,8 @@ export async function GET(request: NextRequest) {
 
   const result = since ? await db.execute({ sql, args: [since] as InValue[] }) : await db.execute(sql);
 
-  const HELD_CAMEL_MAP: Record<string, string> = Object.fromEntries(
-    Object.entries(HELD_SNAKE_MAP).map(([k, v]) => [v, k])
-  );
-
   const heldOrders = result.rows.map((row) => {
-    const obj: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(row)) {
-      const mapped = HELD_CAMEL_MAP[key] ?? key;
-      if (key === "items" || key === "sc_pwd_draft") {
-        obj[mapped] = typeof value === "string" ? JSON.parse(value) : value;
-      } else if (key === "sc_pwd_discount_active") {
-        obj[mapped] = value === 1;
-      } else {
-        obj[mapped] = value;
-      }
-    }
-    return obj;
+    return toCamelRow(Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v])));
   });
 
   return NextResponse.json(heldOrders);
@@ -62,6 +66,25 @@ export async function POST(request: NextRequest) {
   await ensureDb();
   const db = getDb();
   const body = await request.json();
+  const bypassVersionGate = request.headers.get("x-sync-source") === "sync-processor";
+
+  const existing = await db.execute({
+    sql: "SELECT * FROM held_orders WHERE id = ?",
+    args: [body.id],
+  });
+
+  if (!bypassVersionGate && existing.rows.length > 0) {
+    const row = Object.fromEntries(Object.entries(existing.rows[0]).map(([k, v]) => [k, v]));
+    const currentVersion = typeof row.version === "number" ? row.version : Number(row.version ?? 0);
+    const requestedVersion = typeof body.version === "number" ? body.version : Number(body.version ?? 0);
+
+    if (requestedVersion < currentVersion) {
+      return NextResponse.json(
+        { error: "Version conflict", current: toCamelRow(row) },
+        { status: 409 }
+      );
+    }
+  }
 
   const row = toSnakeRow({ ...body, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);

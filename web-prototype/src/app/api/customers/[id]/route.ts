@@ -10,6 +10,36 @@ export async function PUT(
   const db = getDb();
   const { id } = await params;
   const body = await request.json();
+  const bypassVersionGate = request.headers.get("x-sync-source") === "sync-processor";
+
+  const existing = await db.execute({
+    sql: "SELECT * FROM customers WHERE id = ?",
+    args: [id],
+  });
+
+  if (!bypassVersionGate && existing.rows.length > 0) {
+    const row = Object.fromEntries(Object.entries(existing.rows[0]).map(([k, v]) => [k, v]));
+    const currentVersion = typeof row.version === "number" ? row.version : Number(row.version ?? 0);
+    const requestedVersion = typeof body.version === "number" ? body.version : Number(body.version ?? 0);
+
+    if (requestedVersion < currentVersion) {
+      return NextResponse.json(
+        {
+          error: "Version conflict",
+          current: {
+            id: row.id,
+            name: row.name,
+            phone: row.phone,
+            email: row.email,
+            createdAt: row.created_at,
+            version: row.version,
+            updatedAt: row.updated_at,
+          },
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   const createdAt = body.createdAt ?? new Date().toISOString();
   const updatedAt = body.updatedAt ?? new Date().toISOString();

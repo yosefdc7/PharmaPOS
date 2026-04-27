@@ -1,5 +1,6 @@
 import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const SETTINGS_CAMEL_MAP: Record<string, string> = {
@@ -74,9 +75,33 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "admin");
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   await ensureDb();
   const db = getDb();
   const body = await request.json();
+  const bypassVersionGate = request.headers.get("x-sync-source") === "sync-processor";
+
+  const existing = await db.execute({
+    sql: "SELECT * FROM settings WHERE id = ?",
+    args: ["store"],
+  });
+
+  if (!bypassVersionGate && existing.rows.length > 0) {
+    const row = Object.fromEntries(Object.entries(existing.rows[0]).map(([k, v]) => [k, v]));
+    const currentVersion = typeof row.version === "number" ? row.version : Number(row.version ?? 0);
+    const requestedVersion = typeof body.version === "number" ? body.version : Number(body.version ?? 0);
+
+    if (requestedVersion < currentVersion) {
+      return NextResponse.json(
+        { error: "Version conflict", current: rowToSettings(row) },
+        { status: 409 }
+      );
+    }
+  }
 
   const row = settingsToRow({ id: "store", ...body, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);

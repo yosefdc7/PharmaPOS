@@ -3,6 +3,7 @@ import type { SyncConflict, SyncQueueItem } from "./types";
 
 const {
   getAllMock,
+  getByIndexMock,
   getOneMock,
   putOneMock,
   markTransactionsAsSyncedMock,
@@ -12,6 +13,7 @@ const {
   setLastPullTimestampMock,
 } = vi.hoisted(() => ({
   getAllMock: vi.fn(),
+  getByIndexMock: vi.fn(),
   getOneMock: vi.fn(),
   putOneMock: vi.fn(),
   markTransactionsAsSyncedMock: vi.fn(),
@@ -23,6 +25,7 @@ const {
 
 vi.mock("./db", () => ({
   getAll: getAllMock,
+  getByIndex: getByIndexMock,
   getOne: getOneMock,
   putOne: putOneMock,
   markTransactionsAsSynced: markTransactionsAsSyncedMock,
@@ -87,6 +90,7 @@ describe("sync-worker", () => {
     purgeSyncedItemsMock.mockResolvedValue(0);
     getLastPullTimestampMock.mockResolvedValue(null);
     setLastPullTimestampMock.mockResolvedValue(undefined);
+    getByIndexMock.mockResolvedValue([]);
     mockFetch([mockResponse(200, [])]);
     resetSyncInProgress();
   });
@@ -195,10 +199,7 @@ describe("sync-worker", () => {
 
   // --- processSyncItem: create paths ---
   it("processSyncItem handles create successfully", async () => {
-    mockFetch([
-      mockResponse(404, {}),
-      mockResponse(200, { success: true }),
-    ]);
+    mockFetch([mockResponse(200, { success: true, accepted: 1, rejected: [] })]);
     const result = await processSyncItem(
       makeItem({ operation: "create", payload: { id: "p-1", version: 1, name: "A", price: 1 } }),
       "lww"
@@ -206,38 +207,27 @@ describe("sync-worker", () => {
     expect(result.status).toBe("synced");
   });
 
-  it("processSyncItem handles update with manual conflict", async () => {
-    mockFetch([
-      mockResponse(200, { id: "p-1", version: 4, updatedAt: "2026-04-27T03:00:00.000Z" }),
-    ]);
+  it("processSyncItem submits update item to server queue", async () => {
+    mockFetch([mockResponse(200, { success: true, accepted: 1, rejected: [] })]);
     const result = await processSyncItem(makeItem({ operation: "update", entityVersion: 2 }), "manual");
-    expect(result.status).toBe("conflict");
+    expect(result.status).toBe("synced");
   });
 
   // --- processSyncItem: delete paths (B1) ---
   it("processSyncItem handles delete with no remote (404) and pushes", async () => {
-    mockFetch([
-      mockResponse(404, {}),
-      mockResponse(200, { success: true }),
-    ]);
+    mockFetch([mockResponse(200, { success: true, accepted: 1, rejected: [] })]);
     const result = await processSyncItem(makeItem({ operation: "delete", payload: { id: "p-1", version: 3 } }), "lww");
     expect(result.status).toBe("synced");
   });
 
-  it("processSyncItem handles delete with remote conflict and manual strategy", async () => {
-    mockFetch([
-      mockResponse(200, { id: "p-1", version: 5, updatedAt: "2026-04-27T03:00:00.000Z" }),
-    ]);
+  it("processSyncItem handles delete with manual strategy via server queue", async () => {
+    mockFetch([mockResponse(200, { success: true, accepted: 1, rejected: [] })]);
     const result = await processSyncItem(makeItem({ operation: "delete", entityVersion: 3, payload: { id: "p-1", version: 3 } }), "manual");
-    expect(result.status).toBe("conflict");
-    expect(result.conflict?.remoteVersion).toBe(5);
+    expect(result.status).toBe("synced");
   });
 
   it("processSyncItem handles delete with remote conflict and local-wins strategy", async () => {
-    mockFetch([
-      mockResponse(200, { id: "p-1", version: 5 }),
-      mockResponse(200, { success: true }),
-    ]);
+    mockFetch([mockResponse(200, { success: true, accepted: 1, rejected: [] })]);
     const result = await processSyncItem(makeItem({ operation: "delete", entityVersion: 3, payload: { id: "p-1", version: 3 } }), "local-wins");
     expect(result.status).toBe("synced");
   });
@@ -287,15 +277,36 @@ describe("sync-worker", () => {
       lastAttemptAt: new Date().toISOString(),
     });
 
-    getAllMock.mockImplementation(async (store: string) => {
+    getByIndexMock.mockImplementation(async (store: string, _index: string, _query: unknown) => {
       if (store === "syncQueue") return [syncItem, conflictItem, backoffItem];
       return [];
     });
 
     (global.fetch as unknown as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce(mockResponse(404, {}))
-      .mockResolvedValueOnce(mockResponse(200, { success: true }))
-      .mockResolvedValueOnce(mockResponse(200, { id: "p-1", version: 4, updatedAt: "2026-04-27T03:00:00.000Z" }))
+      .mockResolvedValueOnce(mockResponse(200, { success: true, accepted: 1, rejected: [] }))
+      .mockResolvedValueOnce(mockResponse(200, { success: true, accepted: 1, rejected: [] }))
+      .mockResolvedValueOnce(mockResponse(200, {
+        success: true,
+        processed: 2,
+        results: [
+          { id: "sync-a", entity: "transaction", operation: "create", status: "synced" },
+          {
+            id: "sync-b",
+            entity: "product",
+            operation: "update",
+            status: "conflict",
+            conflict: {
+              syncItemId: "sync-b",
+              entity: "product",
+              entityId: "p-1",
+              localVersion: 2,
+              remoteVersion: 4,
+              localPayload: { id: "p-1", version: 2 },
+              remotePayload: { id: "p-1", version: 4 },
+            },
+          },
+        ],
+      }))
       .mockResolvedValueOnce(mockResponse(200, []))
       .mockResolvedValueOnce(mockResponse(200, []))
       .mockResolvedValueOnce(mockResponse(200, []))
@@ -312,6 +323,7 @@ describe("sync-worker", () => {
   });
 
   it("runSync returns empty report when sync already in progress (A4)", async () => {
+    getByIndexMock.mockResolvedValue([]);
     const p1 = runSync("lww");
     const p2 = runSync("lww");
     const [report1, report2] = await Promise.all([p1, p2]);
@@ -327,7 +339,7 @@ describe("sync-worker", () => {
       lastAttemptAt: new Date(Date.now() - 2000).toISOString(),
     });
 
-    getAllMock.mockImplementation(async (store: string) => {
+    getByIndexMock.mockImplementation(async (store: string, _index: string, _query: unknown) => {
       if (store === "syncQueue") return [recentBackoffItem];
       return [];
     });
@@ -350,6 +362,17 @@ describe("sync-worker", () => {
 
   // --- resolveConflictManually (B5) ---
   it("resolveConflictManually resolves remote-wins and merged", async () => {
+    const remoteProcessResponse = mockResponse(200, { success: true, processed: 0, results: [] });
+    const pullResponses = [
+      mockResponse(200, []),
+      mockResponse(200, []),
+      mockResponse(200, []),
+      mockResponse(200, []),
+      mockResponse(200, []),
+      mockResponse(200, []),
+      mockResponse(200, []),
+    ];
+
     getOneMock.mockResolvedValueOnce(
       makeItem({
         id: "sync-1",
@@ -365,6 +388,12 @@ describe("sync-worker", () => {
         },
       })
     );
+
+    mockFetch([
+      mockResponse(200, { success: true }),
+      remoteProcessResponse,
+      ...pullResponses,
+    ]);
     await resolveConflictManually("sync-1", "remote-wins");
     expect(putOneMock).toHaveBeenCalledWith("syncQueue", expect.objectContaining({ status: "synced" }));
 
@@ -384,7 +413,11 @@ describe("sync-worker", () => {
       })
     );
 
-    mockFetch([mockResponse(200, { success: true })]);
+    mockFetch([
+      mockResponse(200, { success: true }),
+      remoteProcessResponse,
+      ...pullResponses,
+    ]);
     await resolveConflictManually("sync-2", "merged");
     expect(putOneMock).toHaveBeenCalledWith("syncQueue", expect.objectContaining({ status: "synced" }));
   });

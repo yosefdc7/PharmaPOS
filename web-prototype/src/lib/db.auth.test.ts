@@ -97,6 +97,7 @@ describe("local auth helpers", () => {
           xReading: false,
           zReadingGenerate: false,
           zReadingView: false,
+          admin: false,
         },
       })
     ).rejects.toThrow("Password is required when creating a user.");
@@ -133,6 +134,7 @@ describe("local auth helpers", () => {
         xReading: false,
         zReadingGenerate: false,
         zReadingView: false,
+        admin: false,
       },
     });
 

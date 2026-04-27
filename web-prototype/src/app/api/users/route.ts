@@ -1,5 +1,6 @@
 import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
@@ -42,6 +43,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAuth(request, "admin"); // Only admins can create users
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   await ensureDb();
   const db = getDb();
   const body = await request.json();
@@ -50,7 +57,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}` }, { status: 400 });
   }
 
-  const hash = await bcrypt.hash(body.password ?? "admin", SALT_ROUNDS);
+  if (!body.password || typeof body.password !== "string" || body.password.trim().length === 0) {
+    return NextResponse.json({ error: "Password is required" }, { status: 400 });
+  }
+  const hash = await bcrypt.hash(body.password.trim(), SALT_ROUNDS);
   const permissions = JSON.stringify(body.permissions ?? {});
 
   await db.execute({

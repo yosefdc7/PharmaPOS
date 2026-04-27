@@ -73,6 +73,28 @@ describe("POS calculations", () => {
     expect(updated[1].quantity).toBe(0);
   });
 
+  it("throws when attempting to sell more than available stock", () => {
+    const products = [
+      {
+        id: "a",
+        version: 1,
+        name: "Limited",
+        barcode: "1",
+        categoryId: "cat",
+        supplier: "",
+        price: 1,
+        quantity: 1,
+        minStock: 0,
+        tracksStock: true,
+        expirationDate: "2027-01-01",
+        imageColor: "#fff"
+      }
+    ];
+    expect(() =>
+      decrementStock(products, [{ productId: "a", productName: "Limited", price: 1, quantity: 5 }])
+    ).toThrow("Insufficient stock");
+  });
+
   it("calculates days until expiry and detects expired / near-expiry", () => {
     const today = new Date();
     const fmt = (d: Date) => `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;

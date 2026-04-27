@@ -25,6 +25,7 @@ export function buildUserPermissions(role: User["role"]): User["permissions"] {
     xReading: isAdmin || isSupervisor,
     zReadingGenerate: isAdmin,
     zReadingView: isAdmin || isSupervisor,
+    admin: isAdmin,
   };
 }
 

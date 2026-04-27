@@ -3,11 +3,11 @@ import { useState, useEffect, useCallback } from "react";
 import { getAll, getOne, putOne } from "../lib/db";
 import { logAuditEvent } from "./audit-trail";
 import { buildReceipt, createPrinterBackend, getReceiptLayoutOptions, PrinterService, resolvePrinterForRole } from "@/lib/printer";
-import type { Transaction, XReading, BirSettings } from "@/lib/types";
+import type { Transaction, XReading, BirSettings, User } from "@/lib/types";
 
 const fmt = (n: number) => `\u20b1${n.toFixed(2)}`;
 
-function computeXReading(transactions: Transaction[]): Omit<XReading, "id"> {
+function computeXReading(transactions: Transaction[], generatedBy: string): Omit<XReading, "id"> {
   const grossSales = transactions.reduce((sum, t) => sum + t.subtotal, 0);
   const scDiscount = transactions.reduce((sum, t) => sum + (t.scPwdMetadata?.scPwdDiscountAmount ?? 0), 0);
   const voids = transactions.filter((t) => t.paymentStatus === "refunded");
@@ -39,18 +39,20 @@ function computeXReading(transactions: Transaction[]): Omit<XReading, "id"> {
     totalReturns: 0,
     returnAmount: 0,
     netSales,
-    generatedBy: "Current User",
+    generatedBy,
     generatedAt: now.toISOString(),
   };
 }
 
-export function XReadingReport({ canPerformAction }: {
+export function XReadingReport({ canPerformAction, currentUser }: {
   canPerformAction?: (action: import("@/lib/types").PermissionKey) => boolean;
+  currentUser?: User | null;
 }) {
   const [generated, setGenerated] = useState<XReading | null>(null);
   const [generating, setGenerating] = useState(false);
   const [reading, setReading] = useState<Omit<XReading, "id"> | null>(null);
   const [printStatus, setPrintStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadAndCompute = useCallback(async () => {
     const [txs, birRaw] = await Promise.all([
@@ -62,10 +64,11 @@ export function XReadingReport({ canPerformAction }: {
       .filter((t) => t.createdAt.startsWith(today))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const bir = birRaw as BirSettings | undefined;
-    const computed = computeXReading(todayTxs);
+    const generatedBy = currentUser?.fullname || "System";
+    const computed = computeXReading(todayTxs, generatedBy);
     if (bir) computed.machineSerial = bir.machineSerial;
     setReading(computed);
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     loadAndCompute();
@@ -73,6 +76,17 @@ export function XReadingReport({ canPerformAction }: {
 
   async function handleGenerate() {
     if (!reading) return;
+    
+    // Check for existing X-Reading for today
+    const today = new Date().toISOString().slice(0, 10);
+    const existingXReadings = await getAll("xReadings") as XReading[];
+    const existingToday = existingXReadings.filter(r => r.reportDate === today);
+    if (existingToday.length > 0) {
+      setError(`An X-Reading has already been generated today (${today}). Generated at: ${existingToday[0].generatedAt}`);
+      return;
+    }
+    
+    setError(null);
     setGenerating(true);
     try {
       const report: XReading = { ...reading, id: crypto.randomUUID() };
@@ -103,6 +117,11 @@ export function XReadingReport({ canPerformAction }: {
           </p>
         )}
       </div>
+      {error && (
+        <p style={{ color: "var(--danger)", fontSize: "0.875rem", marginTop: 8 }}>
+          {error}
+        </p>
+      )}
 
       {r && (
         <div className="bir-report-card">

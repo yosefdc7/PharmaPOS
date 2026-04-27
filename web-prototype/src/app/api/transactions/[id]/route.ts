@@ -1,5 +1,6 @@
 import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 const TX_CAMEL_MAP: Record<string, string> = {
@@ -49,9 +50,14 @@ function txToSql(obj: Record<string, unknown>): Record<string, unknown> {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
+    await requireAuth(request);
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   await ensureDb();
   const db = getDb();
   const { id } = await params;
@@ -73,10 +79,34 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  try {
+    await requireAuth(request);
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   await ensureDb();
   const db = getDb();
   const { id } = await params;
   const body = await request.json();
+  const bypassVersionGate = request.headers.get("x-sync-source") === "sync-processor";
+
+  const existing = await db.execute({
+    sql: "SELECT * FROM transactions WHERE id = ?",
+    args: [id],
+  });
+
+  if (!bypassVersionGate && existing.rows.length > 0) {
+    const row = Object.fromEntries(Object.entries(existing.rows[0]).map(([k, v]) => [k, v]));
+    const currentVersion = typeof row.version === "number" ? row.version : Number(row.version ?? 0);
+    const requestedVersion = typeof body.version === "number" ? body.version : Number(body.version ?? 0);
+
+    if (requestedVersion < currentVersion) {
+      return NextResponse.json(
+        { error: "Version conflict", current: rowToTx(row) },
+        { status: 409 }
+      );
+    }
+  }
 
   const row = txToSql({ ...body, id, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);
@@ -91,18 +121,10 @@ export async function PUT(
   return NextResponse.json({ success: true });
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  await ensureDb();
-  const db = getDb();
-  const { id } = await params;
-
-  await db.execute({
-    sql: "DELETE FROM transactions WHERE id = ?",
-    args: [id],
-  });
-
-  return NextResponse.json({ success: true });
+// BIR compliance: transactions must not be hard-deleted. Use refund/void instead.
+export async function DELETE() {
+  return NextResponse.json(
+    { error: "Transactions cannot be deleted. Use refund or void instead." },
+    { status: 405 }
+  );
 }

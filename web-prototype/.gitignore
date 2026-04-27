@@ -12,3 +12,8 @@ coverage/
 # Serwist
 public/sw*
 public/swe-worker*
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/

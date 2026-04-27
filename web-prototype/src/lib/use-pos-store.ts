@@ -32,6 +32,7 @@ import {
   writeSession,
   getConflictItems
 } from "./db";
+import { sanitizeString, sanitizeRecord } from "./sanitize";
 import {
   buildSnapshot,
   defaultSloTargets,
@@ -147,11 +148,6 @@ export function usePosStore() {
   const [telemetryEvents, setTelemetryEvents] = useState<TelemetryEvent[]>([]);
   const [offlineStartedAt, setOfflineStartedAt] = useState<string | null>(null);
   const [offlineSecondsTotal, setOfflineSecondsTotal] = useState(0);
-  const [rxPharmacists, setRxPharmacists] = useState<RxPharmacist[]>([
-    { id: "rx-pharm-1", name: "Rina Dela Cruz", prcNumber: "PRC-1263901", role: "pharmacist" },
-    { id: "rx-pharm-2", name: "Miguel Santos", prcNumber: "PRC-1130254", role: "pharmacist" },
-    { id: "rx-admin-1", name: "Maria Velasco", prcNumber: "PRC-1028704", role: "admin" }
-  ]);
   const [rxPrescriptionDrafts, setRxPrescriptionDrafts] = useState<PrescriptionDraft[]>([]);
   const [rxRedFlags, setRxRedFlags] = useState<RxRedFlag[]>([
     {
@@ -171,6 +167,18 @@ export function usePosStore() {
 
   const online = browserOnline && !forcedOffline;
   const pendingSync = useMemo(() => syncQueue.filter((item) => item.status === "pending"), [syncQueue]);
+
+  // Derive pharmacists from real users instead of hardcoded mock data
+  const rxPharmacists = useMemo<RxPharmacist[]>(() => {
+    return users
+      .filter((u) => u.role === "pharmacist" || u.role === "admin")
+      .map((u): RxPharmacist => ({
+        id: u.id,
+        name: u.fullname,
+        prcNumber: u.prcNumber || "N/A",
+        role: u.role === "pharmacist" ? "pharmacist" : "admin",
+      }));
+  }, [users]);
 
   const recordEvent = useCallback((event: Omit<TelemetryEvent, "ts">) => {
     const eventWithTs: TelemetryEvent = { ...event, ts: new Date().toISOString() };
@@ -201,12 +209,12 @@ export function usePosStore() {
 
     setProducts(nextProducts);
     setCategories(nextCategories);
-    setCustomers(nextCustomers.map((customer) => ({ ...customer, createdAt: customer.createdAt ?? new Date(0).toISOString() })));
+    setCustomers(nextCustomers.map((customer: Customer) => ({ ...customer, createdAt: customer.createdAt ?? new Date(0).toISOString() })));
     setUsers(nextUsers);
     setSettings(nextSettings || null);
-    setTransactions(nextTransactions.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-    setHeldOrders(nextHeld.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-    setSyncQueue(nextSync.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+    setTransactions(nextTransactions.sort((a: Transaction, b: Transaction) => b.createdAt.localeCompare(a.createdAt)));
+    setHeldOrders(nextHeld.sort((a: HeldOrder, b: HeldOrder) => b.createdAt.localeCompare(a.createdAt)));
+    setSyncQueue(nextSync.sort((a: SyncQueueItem, b: SyncQueueItem) => b.createdAt.localeCompare(a.createdAt)));
     setFeatureFlags(nextFlags);
     setConflictItems(nextConflicts);
   }, []);
@@ -253,15 +261,20 @@ export function usePosStore() {
     }
 
     boot();
+
     const onOnline = () => setBrowserOnline(true);
     const onOffline = () => setBrowserOnline(false);
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", onOnline);
+      window.addEventListener("offline", onOffline);
+    }
 
     return () => {
-      mounted = false;
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", onOnline);
+        window.removeEventListener("offline", onOffline);
+      }
     };
   }, [refresh]);
 
@@ -299,6 +312,19 @@ export function usePosStore() {
   const addToCart = useCallback((product: Product) => {
     if (product.tracksStock && product.quantity <= 0) return;
 
+    // Prescription / controlled product role check
+    const isControlled =
+      product.drugClassification === "DD, Rx" ||
+      product.drugClassification === "EDD, Rx" ||
+      product.drugClassification === "Rx" ||
+      product.drugClassification === "Pharmacist-Only OTC" ||
+      product.isPrescription ||
+      product.behindCounter;
+
+    if (isControlled && currentUser?.role !== "pharmacist" && currentUser?.role !== "admin") {
+      return;
+    }
+
     setCart((items) => {
       const existing = items.find((item) => item.productId === product.id);
       if (existing) {
@@ -317,7 +343,7 @@ export function usePosStore() {
         { productId: product.id, productName: product.name, price: product.price, quantity: 1 }
       ];
     });
-  }, []);
+  }, [currentUser]);
 
   const updateCartQuantity = useCallback((productId: string, quantity: number) => {
     const product = products.find((item) => item.id === productId);
@@ -381,9 +407,9 @@ export function usePosStore() {
           change: calculateChange(saleTotals.total, paid),
           paymentMethod: input.method,
           paymentStatus: input.paymentStatus,
-          paymentReference: input.reference.trim(),
+          paymentReference: sanitizeString(input.reference),
           syncStatus: "pending",
-          remarks: remarks.trim(),
+          remarks: sanitizeString(remarks),
           scPwdMetadata: isScPwdActive && scPwdDraft
             ? {
                 ...scPwdDraft,
@@ -393,9 +419,10 @@ export function usePosStore() {
             : undefined
         };
 
-        recordEvent({ type: "payment_attempt", details: { status: input.paymentStatus, method: input.method, total: saleTotals.total } });
+        // Build SC/PWD log row (but don't commit to state yet)
+        let scPwdRow: ScPwdTransactionLogRow | null = null;
         if (isScPwdActive && scPwdDraft) {
-          const row: ScPwdTransactionLogRow = {
+          scPwdRow = {
             id: crypto.randomUUID(),
             transactionId: transaction.id,
             orNumber: transaction.localNumber,
@@ -419,8 +446,8 @@ export function usePosStore() {
             proxyPurchase: scPwdDraft.proxyPurchase,
             supervisorOverride: transaction.scPwdMetadata?.supervisorOverride
           };
-          setScPwdTransactionLog((prev) => [...prev, row]);
         }
+
         const updatedProducts = decrementStock(products, processedCart).map((product) => withNextVersion(product));
         const updatedBir: (BirSettings & { id: string }) | null = bir
           ? { ...bir, id: "bir", currentOrNumber: bir.currentOrNumber + 1 }
@@ -428,6 +455,12 @@ export function usePosStore() {
 
         // Atomic write: all succeed or all fail together
         await atomicSaleWrite(updatedProducts, transaction, updatedBir);
+
+        // Side effects only after atomic write succeeds
+        recordEvent({ type: "payment_attempt", details: { status: input.paymentStatus, method: input.method, total: saleTotals.total } });
+        if (scPwdRow) {
+          setScPwdTransactionLog((prev) => [...prev, scPwdRow!]);
+        }
 
         await enqueueSync({ entity: "transaction", operation: "create", payload: transaction });
         await enqueueSync({ entity: "product", operation: "update", payload: updatedProducts });
@@ -495,11 +528,11 @@ export function usePosStore() {
       const order: HeldOrder = {
         id: crypto.randomUUID(),
         version: 1,
-        reference: reference.trim() || `Hold ${heldOrders.length + 1}`,
+        reference: sanitizeString(reference) || `Hold ${heldOrders.length + 1}`,
         items: cart,
         customerId,
         discount,
-        remarks: remarks.trim(),
+        remarks: sanitizeString(remarks),
         createdAt: new Date().toISOString(),
         scPwdDiscountActive: activeScPwdDiscount,
         scPwdDraft: scPwdDraft ?? undefined
@@ -536,9 +569,21 @@ export function usePosStore() {
     ) => {
       const existing = await getOne(storeName, entity.id);
       const operation = existing ? "update" : "create";
+      let sanitized = entity;
+      if (storeName === "products") {
+        sanitized = sanitizeRecord(entity as Product, ["name", "barcode", "supplier", "genericName", "brandName"] as (keyof Product)[]) as T;
+      } else if (storeName === "customers") {
+        sanitized = sanitizeRecord(entity as Customer, ["name", "phone", "email"] as (keyof Customer)[]) as T;
+      } else if (storeName === "categories") {
+        sanitized = sanitizeRecord(entity as Category, ["name"] as (keyof Category)[]) as T;
+      } else if (storeName === "users") {
+        sanitized = sanitizeRecord(entity as User, ["username", "fullname"] as (keyof User)[]) as T;
+      } else if (storeName === "settings") {
+        sanitized = sanitizeRecord(entity as Settings, ["store", "addressOne", "addressTwo", "contact", "receiptFooter"] as (keyof Settings)[]) as T;
+      }
       const versionedEntity = operation === "create"
-        ? { ...entity, version: 1 }
-        : withNextVersion(entity);
+        ? { ...sanitized, version: 1 }
+        : withNextVersion(sanitized);
       await putOne(storeName, versionedEntity as never);
       await enqueueSync({ entity: syncEntity, operation, payload: versionedEntity });
       await refresh();
@@ -697,7 +742,7 @@ export function usePosStore() {
       const refunded = {
         ...withNextVersion(transaction),
         paymentStatus: "refunded" as const,
-        refundReason: reason.trim() || "Operator initiated",
+        refundReason: sanitizeString(reason) || "Operator initiated",
         refundedAt: new Date().toISOString(),
         refundReference: `refund-${transaction.localNumber}`
       };
@@ -744,15 +789,31 @@ export function usePosStore() {
   }, []);
 
   const switchUser = useCallback(
-    (username: string) => {
+    async (username: string, password?: string) => {
       const user = users.find((candidate) => candidate.username === username);
-      if (user) {
-        setCurrentUser(user);
-        writeSession(user);
+      if (!user) return false;
+
+      // Require password when switching to a different role (any role change)
+      const roleHierarchy: Record<string, number> = { cashier: 1, supervisor: 2, pharmacist: 3, admin: 4 };
+      const currentRoleLevel = roleHierarchy[currentUser?.role ?? "cashier"] ?? 0;
+      const targetRoleLevel = roleHierarchy[user.role] ?? 0;
+
+      // Require password for any role change or elevation
+      if (targetRoleLevel !== currentRoleLevel) {
+        if (!password) return false;
+        const result = await loginLocal(username, password);
+        if (!result.auth) return false;
+      } else if (password) {
+        // If same role but password provided, still verify it for security
+        const result = await loginLocal(username, password);
+        if (!result.auth) return false;
       }
-      return Boolean(user);
+
+      setCurrentUser(user);
+      writeSession(user);
+      return true;
     },
-    [users]
+    [users, currentUser]
   );
 
   const saveRxPrescriptionDraft = useCallback((draft: PrescriptionDraft) => {
@@ -761,11 +822,16 @@ export function usePosStore() {
       if (!found) return [draft, ...current];
       return current.map((item) => (item.id === draft.id ? draft : item));
     });
-    putOne("prescriptions", draft);
-  }, []);
+    // Fire-and-forget with error tracking
+    putOne("prescriptions", draft).catch((err) => {
+      logStructured("error", "db.prescriptions.save_failed", { draftId: draft.id, error: err instanceof Error ? err.message : String(err) });
+      recordEvent({ type: "mutation_failed", details: { scope: "saveRxPrescriptionDraft", draftId: draft.id } });
+    });
+  }, [recordEvent]);
 
   const logRxRefusal = useCallback((refusal: PrescriptionRefusal) => {
     setRxRefusals((current) => [refusal, ...current]);
+    // Fire-and-forget with error tracking
     putOne("auditLog", {
       id: refusal.id,
       action: "settings-change",
@@ -773,11 +839,15 @@ export function usePosStore() {
       timestamp: refusal.createdAt,
       details: `Refused ${refusal.productName} for ${refusal.patientName}: ${refusal.reason}`,
       requiredRole: "supervisor",
+    }).catch((err) => {
+      logStructured("error", "db.auditlog.save_failed", { refusalId: refusal.id, error: err instanceof Error ? err.message : String(err) });
+      recordEvent({ type: "mutation_failed", details: { scope: "logRxRefusal", refusalId: refusal.id } });
     });
-  }, []);
+  }, [recordEvent]);
 
   const addRxRedFlag = useCallback((flag: RxRedFlag) => {
     setRxRedFlags((current) => [flag, ...current]);
+    // Fire-and-forget with error tracking
     putOne("auditLog", {
       id: crypto.randomUUID(),
       action: "settings-change",
@@ -785,8 +855,11 @@ export function usePosStore() {
       timestamp: flag.createdAt,
       details: `Red flag raised: ${flag.title} - ${flag.reason}`,
       requiredRole: "supervisor",
+    }).catch((err) => {
+      logStructured("error", "db.auditlog.save_failed", { flagId: flag.id, error: err instanceof Error ? err.message : String(err) });
+      recordEvent({ type: "mutation_failed", details: { scope: "addRxRedFlag", flagId: flag.id } });
     });
-  }, []);
+  }, [recordEvent]);
 
   const clearRxRedFlag = useCallback((id: string) => {
     setRxRedFlags((current) => current.filter((flag) => flag.id !== id));
@@ -890,7 +963,6 @@ export function usePosStore() {
     logout,
     switchUser,
     rxPharmacists,
-    setRxPharmacists,
     rxPrescriptionDrafts,
     rxRedFlags,
     rxRefusals,
@@ -909,7 +981,7 @@ export function usePosStore() {
     ),
     acknowledgeOverride: useCallback(
       (actionType: SupervisorAck["actionType"], supervisorId: string, supervisorName: string, reason: string, targetId?: string) =>
-        acknowledgeOverride(actionType, supervisorId, supervisorName, reason, targetId),
+        acknowledgeOverride(actionType, supervisorId, supervisorName, sanitizeString(reason), targetId),
       [],
     ),
     observabilitySnapshot,

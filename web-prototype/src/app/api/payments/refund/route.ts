@@ -1,13 +1,23 @@
 import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
+  try {
+    const { role } = await requireAuth(request);
+    if (role !== "admin" && role !== "supervisor") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   await ensureDb();
   const db = getDb();
   const body = await request.json();
 
-  const { transactionId, reason, reference, amount } = body;
+  const { transactionId, reason, reference } = body;
 
   if (!transactionId) {
     return NextResponse.json(
@@ -20,7 +30,7 @@ export async function POST(request: NextRequest) {
   const refundReference = reference || `REF-${Date.now()}`;
 
   // Update transaction with refund details
-  await db.execute({
+  const updateResult = await db.execute({
     sql: `UPDATE transactions
           SET refunded_at = ?,
               refund_reason = ?,
@@ -30,18 +40,14 @@ export async function POST(request: NextRequest) {
     args: [now, reason || "Customer request", refundReference, transactionId] as InValue[],
   });
 
-  // Get updated transaction to return
-  const result = await db.execute({
-    sql: "SELECT * FROM transactions WHERE id = ?",
-    args: [transactionId] as InValue[],
-  });
-
-  if (result.rows.length === 0) {
+  if (updateResult.rowsAffected === 0) {
     return NextResponse.json(
-      { error: "Transaction not found" },
-      { status: 404 }
+      { error: "Transaction not found or already refunded" },
+      { status: 409 }
     );
   }
+
+  // TODO: Restore product stock for refunded items (requires product quantity lookup)
 
   return NextResponse.json({
     success: true,

@@ -1,8 +1,9 @@
 import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
+import { requireAuth } from "@/lib/server/auth";
 import { NextRequest, NextResponse } from "next/server";
 
-const DEFAULT_FLAGS = { sync: false, payments: false, refunds: false };
+const DEFAULT_FLAGS = { sync: true, payments: false, refunds: false };
 
 export async function GET() {
   await ensureDb();
@@ -23,6 +24,12 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
+  try {
+    await requireAuth(request, "admin"); // Only admins can modify feature flags
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   await ensureDb();
   const db = getDb();
   const body = await request.json();

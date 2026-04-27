@@ -2,6 +2,19 @@ import { type InValue, getDb } from "@/lib/server/db";
 import { ensureDb } from "@/lib/server/init";
 import { NextRequest, NextResponse } from "next/server";
 
+type SyncQueuePayload = {
+  id?: unknown;
+  entity?: unknown;
+  operation?: unknown;
+  payload?: unknown;
+  createdAt?: unknown;
+  status?: unknown;
+  retryCount?: unknown;
+  lastAttemptAt?: unknown;
+  lastError?: unknown;
+  entityVersion?: unknown;
+};
+
 export async function GET(request: NextRequest) {
   await ensureDb();
   const db = getDb();
@@ -36,26 +49,64 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   await ensureDb();
   const db = getDb();
-  const body = await request.json();
+  const body = (await request.json().catch(() => ({}))) as SyncQueuePayload | SyncQueuePayload[];
+  const nowIso = new Date().toISOString();
+  const items = Array.isArray(body) ? body : [body];
 
-  await db.execute({
-    sql: `INSERT INTO sync_queue (id, entity, operation, payload, created_at, status, retry_count, last_attempt_at, last_error, entity_version)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      body.id,
-      body.entity,
-      body.operation,
-      JSON.stringify(body.payload),
-      body.createdAt ?? new Date().toISOString(),
-      body.status ?? "pending",
-      body.retryCount ?? 0,
-      body.lastAttemptAt ?? new Date().toISOString(),
-      body.lastError ?? "",
-      body.entityVersion ?? 1,
-    ],
+  const rejected: Array<{ item: unknown; reason: string }> = [];
+  let accepted = 0;
+
+  for (const rawItem of items) {
+    const id = typeof rawItem.id === "string" && rawItem.id ? rawItem.id : "";
+    const entity = typeof rawItem.entity === "string" && rawItem.entity ? rawItem.entity : "";
+    const operation =
+      rawItem.operation === "create" || rawItem.operation === "update" || rawItem.operation === "delete"
+        ? rawItem.operation
+        : "";
+
+    if (!id || !entity || !operation) {
+      rejected.push({
+        item: rawItem,
+        reason: "Invalid sync queue item. Required fields: id, entity, operation(create|update|delete).",
+      });
+      continue;
+    }
+
+    await db.execute({
+      sql: `INSERT INTO sync_queue (id, entity, operation, payload, created_at, status, retry_count, last_attempt_at, last_error, entity_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              entity = excluded.entity,
+              operation = excluded.operation,
+              payload = excluded.payload,
+              created_at = excluded.created_at,
+              status = excluded.status,
+              retry_count = excluded.retry_count,
+              last_attempt_at = excluded.last_attempt_at,
+              last_error = excluded.last_error,
+              entity_version = excluded.entity_version`,
+      args: [
+        id,
+        entity,
+        operation,
+        JSON.stringify(rawItem.payload ?? {}),
+        typeof rawItem.createdAt === "string" && rawItem.createdAt ? rawItem.createdAt : nowIso,
+        typeof rawItem.status === "string" && rawItem.status ? rawItem.status : "pending",
+        typeof rawItem.retryCount === "number" ? rawItem.retryCount : 0,
+        typeof rawItem.lastAttemptAt === "string" && rawItem.lastAttemptAt ? rawItem.lastAttemptAt : nowIso,
+        typeof rawItem.lastError === "string" ? rawItem.lastError : "",
+        typeof rawItem.entityVersion === "number" ? rawItem.entityVersion : 1,
+      ] as InValue[],
+    });
+
+    accepted++;
+  }
+
+  return NextResponse.json({
+    success: rejected.length === 0,
+    accepted,
+    rejected,
   });
-
-  return NextResponse.json({ success: true });
 }
 
 export async function PUT(request: NextRequest) {

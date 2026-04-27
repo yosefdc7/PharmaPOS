@@ -1,43 +1,5 @@
 # Changelog
 
-## 2026-04-26 - QA Remediation Pass
-
-### Fixed
-- `z-reading.tsx` — replaced inline override modal with reusable `OverrideModal` component, removed hardcoded "Admin" strings, now uses `users` prop for supervisor dropdown, logs actual user identity in audit trail, writes `SupervisorAck` to IndexedDB on override (agent: qoder)
-- De-duplicated `canUserAccessView`/`getAvailableViews`/`resolveAccessibleView` — removed dead copies from `use-pos-store.ts`, now canonical source is `use-permissions.ts` (agent: qoder)
-- Server-side seed (`lib/server/seed.ts`) — updated with all 16 permission keys and 4 users (admin, supervisor, pharmacist, cashier) (agent: qoder)
-- API `users/check/route.ts` — auto-created admin now has all 16 permission keys (agent: qoder)
-- API `users/route.ts` and `users/[id]/route.ts` — added role validation whitelist (`admin | supervisor | pharmacist | cashier`), rejects arbitrary role strings with 400 error (agent: qoder)
-- `refundTransaction()` — now checks `currentUser.permissions.refund` before proceeding (agent: qoder)
-- `AuditEntry.requiredRole` — added `"pharmacist"` to union type (agent: qoder)
-- Added `requiredPermission: "reports"` gate to eJournal and eSales tabs in BIR Reports (agent: qoder)
-- Test imports updated — `canUserAccessView`/`getAvailableViews`/`resolveAccessibleView`/`ALL_APP_VIEWS` now imported from `@/lib/use-permissions` (agent: qoder)
-- Component test mocks updated to include `...permissions` spread for proper function resolution (agent: qoder)
-
-## 2026-04-26 - Role-based Permissions UI
-
-### Added
-- `supervisor` and `pharmacist` roles alongside existing `admin` and `cashier` (agent: qoder)
-- 6 new permission keys: `void`, `refund`, `override`, `xReading`, `zReadingGenerate`, `zReadingView` (agent: qoder)
-- `src/lib/use-permissions.ts` — centralized `buildUserPermissions()`, `canUserAccessView()`, `getAvailableViews()`, `resolveAccessibleView()`, and `usePermissions()` hook (agent: qoder)
-- `src/components/override-modal.tsx` — supervisor authorization modal with dropdown, reason field, and audit trail logging (agent: qoder)
-- `supervisorAcks` IndexedDB store (schema v6) for tracking supervisor override authorizations (agent: qoder)
-- `acknowledgeOverride()` helper in `db.ts` (agent: qoder)
-- `canPerformAction()` and `acknowledgeOverride()` exposed from `use-pos-store.ts` (agent: qoder)
-- Seed users for supervisor (`usr-supervisor`) and pharmacist (`usr-pharmacist`) with appropriate permission sets (agent: qoder)
-- Role gate on X-Reading generation (supervisor+) and Z-Reading generation (admin only) (agent: qoder)
-- Role gate on BIR Reports tabs — X-Reading and Z-Reading visibility controlled by permissions (agent: qoder)
-- User management form now offers all 4 roles in dropdown (agent: qoder)
-
-### Changed
-- `User.role` type changed from `"admin" | "cashier"` to `UserRole` union (agent: qoder)
-- `PermissionKey` extended from 10 to 16 keys (agent: qoder)
-- `buildUserPermissions()` moved from `pos-prototype.tsx` to `use-permissions.ts` (agent: qoder)
-- `BirReportsPanel` now accepts `canPerformAction` and `users` props for role-gated tab visibility (agent: qoder)
-- `XReadingReport` and `ZReadingReport` accept optional `canPerformAction` prop (agent: qoder)
-- `ReportsView` component passes permission props through to child components (agent: qoder)
-- Updated all test files to use role-based user lookup instead of array index (agent: qoder)
-
 ## 2026-04-26 - Service Worker (Offline PWA)
 
 ### Added

@@ -108,7 +108,7 @@ export function BirReportsPanel({
           </button>
         ))}
       </div>
-      {tab === "x-reading" && <XReadingReport canPerformAction={canPerformAction} />}
+      {tab === "x-reading" && <XReadingReport canPerformAction={canPerformAction} currentUser={currentUser} />}
       {tab === "z-reading" && (
         <ZReadingReport
           canPerformAction={canPerformAction}

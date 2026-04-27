@@ -13,6 +13,7 @@
     "test:contract": "vitest run src/contracts",
     "security:scan": "npm audit --audit-level=high",
     "verify:rollback": "vitest run src/lib/migrations.integration.test.ts",
+    "test:e2e": "playwright test",
     "ci:gates": "npm run typecheck && npm run test:unit && npm run test:integration && npm run test:contract && npm run security:scan"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "react-dom": "19.2.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@serwist/turbopack": "^9.5.7",
     "@testing-library/react": "16.3.2",
     "@types/bcryptjs": "3.0.0",

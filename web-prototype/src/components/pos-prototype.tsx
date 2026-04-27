@@ -14,7 +14,7 @@ import { ReprintQueue } from "./reprint-queue";
 import { PrintFailureModal } from "./print-failure-modal";
 import { ReceiptPreview } from "./receipt-preview";
 import { buildReceipt, createPrinterBackend, enqueuePrintJob, getReceiptLayoutOptions, markJobStatus, PrinterService, removeJob } from "@/lib/printer";
-import { getOne } from "@/lib/db";
+import { getOne, exportAllData, importAllData } from "@/lib/db";
 import { ScpwdDiscountModal } from "./scpwd-discount-modal";
 import { ScpwdBreakdownCard } from "./scpwd-breakdown-card";
 import { ScpwdEligibilityWarning } from "./scpwd-eligibility-warning";
@@ -54,8 +54,17 @@ function formatCurrency(symbol: string, value: number) {
   return `${symbol}${money(value).toFixed(2)}`;
 }
 
+function sanitizeString(value: string): string {
+  return value.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "").trim();
+}
+
 function readForm(form: HTMLFormElement) {
-  return Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
+  const raw = Object.fromEntries(new FormData(form).entries());
+  const sanitized: Record<string, string | File> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    sanitized[key] = typeof value === "string" ? sanitizeString(value) : value;
+  }
+  return sanitized as Record<string, string>;
 }
 
 function buildProductDraft(overrides?: Partial<Product>): Product {
@@ -229,6 +238,7 @@ export function PosPrototype() {
   }
 
   async function holdCurrentOrder() {
+    if (!store.canPerformAction("transactions")) return;
     await store.holdOrder(holdReference);
     setHoldReference("");
   }
@@ -292,7 +302,26 @@ export function PosPrototype() {
             </span>
             <label className="select-label">
               User
-              <select value={store.currentUser.username} onChange={(event) => store.switchUser(event.target.value)}>
+              <select
+                value={store.currentUser?.username ?? ""}
+                onChange={async (event) => {
+                  const targetUsername = event.target.value;
+                  if (targetUsername === store.currentUser?.username) return;
+
+                  // Prompt for password when switching to a different user
+                  // TODO: replace with a proper modal for production UX
+                  const password = typeof window !== "undefined"
+                    ? window.prompt(`Enter password for ${targetUsername}:`)
+                    : null;
+
+                  const success = await store.switchUser(targetUsername, password ?? undefined);
+                  if (!success && typeof window !== "undefined") {
+                    window.alert("Switch failed: incorrect password or insufficient privileges.");
+                    // Revert select to current user
+                    event.currentTarget.value = store.currentUser?.username ?? "";
+                  }
+                }}
+              >
                 {store.users.map((user) => (
                   <option key={user.id} value={user.username}>
                     {user.fullname}
@@ -483,7 +512,14 @@ export function PosPrototype() {
                 <div className="held-list">
                   <h3>Held orders</h3>
                   {store.heldOrders.map((order) => (
-                    <button key={order.id} onClick={() => store.resumeHeldOrder(order)}>
+                    <button
+                      key={order.id}
+                      disabled={!store.canPerformAction("transactions")}
+                      onClick={() => {
+                        if (!store.canPerformAction("transactions")) return;
+                        store.resumeHeldOrder(order);
+                      }}
+                    >
                       {order.reference} - {order.items.length} lines
                     </button>
                   ))}
@@ -1711,9 +1747,53 @@ function SettingsView({
               <button className="primary" disabled={!canPerformAction("settings")}>Save settings</button>
               <button
                 type="button"
-                disabled={!canPerformAction("settings")}
+                disabled={!canPerformAction("admin")}
+                onClick={async () => {
+                  if (!canPerformAction("admin")) return;
+                  const data = await exportAllData();
+                  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `ppos-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Export Backup
+              </button>
+              <button
+                type="button"
+                disabled={!canPerformAction("admin")}
                 onClick={() => {
-                  if (!canPerformAction("settings")) return;
+                  if (!canPerformAction("admin")) return;
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = ".json,application/json";
+                  input.onchange = async () => {
+                    const file = input.files?.[0];
+                    if (!file) return;
+                    if (!window.confirm("WARNING: This will replace ALL current data with the backup. This action cannot be undone. Are you sure?")) return;
+                    try {
+                      const text = await file.text();
+                      const data = JSON.parse(text);
+                      await importAllData(data);
+                      window.alert("Backup restored successfully. Reloading...");
+                      window.location.reload();
+                    } catch (err) {
+                      window.alert(`Restore failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                Import Backup
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  if (!canPerformAction("admin")) return;
                   if (window.confirm("WARNING: This will permanently delete ALL data and reset to factory defaults. This action cannot be undone. Are you sure?")) {
                     reset();
                   }
@@ -1983,7 +2063,7 @@ function ReportsView({
         />
       ) : null}
       {reportsTab === "audit" ? (
-        <AuditTrailPanel />
+        <AuditTrailPanel users={users} />
       ) : null}
       {reportsTab === "sc-pwd" ? (
         <section className="reports-grid">

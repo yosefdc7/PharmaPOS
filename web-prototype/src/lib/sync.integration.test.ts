@@ -18,27 +18,31 @@ describe("sync integration", () => {
 
     const localUpdate = { ...product!, quantity: product!.quantity - 1, version: product!.version + 1, updatedAt: new Date().toISOString() };
     await putOne("products", localUpdate);
-    await enqueueSync({ entity: "product", operation: "update", payload: localUpdate });
+    const queued = await enqueueSync({ entity: "product", operation: "update", payload: localUpdate });
 
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 
-      if (url.includes("/api/products/prd-para-500") && (!init?.method || init.method === "GET")) {
+      if (url.includes("/api/sync-queue") && init?.method === "POST") {
         return {
           ok: true,
           status: 200,
           statusText: "OK",
-          json: async () => ({ id: "prd-para-500", version: 1 }),
+          json: async () => ({ success: true, accepted: 1, rejected: [] }),
           text: async () => "",
         } as Response;
       }
 
-      if (url.includes("/api/products/prd-para-500") && init?.method === "PUT") {
+      if (url.includes("/api/sync/process") && init?.method === "POST") {
         return {
           ok: true,
           status: 200,
           statusText: "OK",
-          json: async () => ({ success: true }),
+          json: async () => ({
+            success: true,
+            processed: 1,
+            results: [{ id: queued.id, entity: "product", operation: "update", status: "synced" }],
+          }),
           text: async () => "",
         } as Response;
       }
@@ -82,16 +86,48 @@ describe("sync integration", () => {
 
     global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/api/customers/cus-ana") && (!init?.method || init.method === "GET")) {
+
+      if (url.includes("/api/sync-queue") && init?.method === "POST") {
         return {
           ok: true,
           status: 200,
           statusText: "OK",
-          json: async () => ({ id: "cus-ana", version: pending.version + 1, updatedAt: new Date().toISOString(), phone: "+63 900 111 2222" }),
+          json: async () => ({ success: true, accepted: 1, rejected: [] }),
           text: async () => "",
         } as Response;
       }
-      if (url.includes("/api/customers/cus-ana") && init?.method === "PUT") {
+
+      if (url.includes("/api/sync/process") && init?.method === "POST") {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({
+            success: true,
+            processed: 1,
+            results: [
+              {
+                id: queued.id,
+                entity: "customer",
+                operation: "update",
+                status: "conflict",
+                conflict: {
+                  syncItemId: queued.id,
+                  entity: "customer",
+                  entityId: "cus-ana",
+                  localVersion: pending.version,
+                  remoteVersion: pending.version + 1,
+                  localPayload: pending,
+                  remotePayload: { id: "cus-ana", version: pending.version + 1, updatedAt: new Date().toISOString(), phone: "+63 900 111 2222" },
+                },
+              },
+            ],
+          }),
+          text: async () => "",
+        } as Response;
+      }
+
+      if (url.includes("/api/sync-queue") && init?.method === "PUT") {
         return {
           ok: true,
           status: 200,
@@ -100,6 +136,27 @@ describe("sync integration", () => {
           text: async () => "",
         } as Response;
       }
+
+      if (url.includes("/api/customers?") || url.endsWith("/api/customers")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => [{ id: "cus-ana", version: pending.version + 1, updatedAt: new Date().toISOString(), phone: "+63 900 111 2222" }],
+          text: async () => "",
+        } as Response;
+      }
+
+      if (url.includes("/api/products") || url.includes("/api/categories") || url.includes("/api/users") || url.includes("/api/settings") || url.includes("/api/transactions") || url.includes("/api/held-orders")) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => [],
+          text: async () => "",
+        } as Response;
+      }
+
       return {
         ok: true,
         status: 200,

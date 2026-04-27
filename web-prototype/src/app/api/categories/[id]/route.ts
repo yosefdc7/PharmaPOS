@@ -10,6 +10,33 @@ export async function PUT(
   const db = getDb();
   const { id } = await params;
   const body = await request.json();
+  const bypassVersionGate = request.headers.get("x-sync-source") === "sync-processor";
+
+  const existing = await db.execute({
+    sql: "SELECT * FROM categories WHERE id = ?",
+    args: [id],
+  });
+
+  if (!bypassVersionGate && existing.rows.length > 0) {
+    const row = Object.fromEntries(Object.entries(existing.rows[0]).map(([k, v]) => [k, v]));
+    const currentVersion = typeof row.version === "number" ? row.version : Number(row.version ?? 0);
+    const requestedVersion = typeof body.version === "number" ? body.version : Number(body.version ?? 0);
+
+    if (requestedVersion < currentVersion) {
+      return NextResponse.json(
+        {
+          error: "Version conflict",
+          current: {
+            id: row.id,
+            name: row.name,
+            version: row.version,
+            updatedAt: row.updated_at,
+          },
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   await db.execute({
     sql: `INSERT INTO categories (id, name, version, updated_at) VALUES (?, ?, ?, ?)

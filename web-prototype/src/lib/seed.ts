@@ -1,4 +1,4 @@
-import type { Category, Customer, Product, ScPwdSettings, Settings, SyncQueueItem, Transaction, User } from "./types";
+import type { BirSettings, Category, Customer, Product, ScPwdSettings, Settings, SyncQueueItem, Transaction, User } from "./types";
 
 export const seedCategories: Category[] = [
   { id: "cat-pain", version: 1, name: "Pain Relief" },
@@ -235,6 +235,7 @@ export const seedUsers: User[] = [
       xReading: true,
       zReadingGenerate: true,
       zReadingView: true,
+      admin: true,
     }
   },
   {
@@ -260,6 +261,7 @@ export const seedUsers: User[] = [
       xReading: true,
       zReadingGenerate: false,
       zReadingView: true,
+      admin: false,
     }
   },
   {
@@ -285,6 +287,7 @@ export const seedUsers: User[] = [
       xReading: false,
       zReadingGenerate: false,
       zReadingView: false,
+      admin: false,
     }
   },
   {
@@ -310,6 +313,7 @@ export const seedUsers: User[] = [
       xReading: false,
       zReadingGenerate: false,
       zReadingView: false,
+      admin: false,
     }
   }
 ];
@@ -337,6 +341,21 @@ export const seedSettings: Settings = {
   receiptFooter: "Thank you for choosing PharmaPOS PH.",
   expiryAlertDays: 30,
   scPwdSettings: seedScPwdSettings
+};
+
+export const seedBirSettings: BirSettings & { id: string } = {
+  id: "bir",
+  registeredName: "PharmaPOS PH Demo",
+  tin: "",
+  registeredAddress: "123 Main Street, Makati City",
+  vatRegistered: true,
+  ptuNumber: "",
+  machineSerial: "",
+  accreditationNumber: "",
+  currentOrNumber: 1,
+  orSeriesStart: 1,
+  orSeriesEnd: 5000,
+  zReadingCutoffTime: "23:59",
 };
 
 export const seedTransactions: Transaction[] = [];

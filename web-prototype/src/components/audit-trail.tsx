@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { getAll, putOne } from "../lib/db";
-import type { AuditEntry, AuditActionType, PrinterActivityLog } from "@/lib/types";
+import type { AuditEntry, AuditActionType, PrinterActivityLog, User } from "@/lib/types";
 
 const ACTION_OPTIONS: { value: AuditActionType | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -19,8 +19,6 @@ const ACTION_OPTIONS: { value: AuditActionType | "all"; label: string }[] = [
   { value: "scpwd-remove", label: "SC/PWD Remove" },
   { value: "scpwd-override", label: "SC/PWD Override" },
 ];
-
-const USER_OPTIONS = ["All", "Maria Santos", "Juan Cruz", "Admin"];
 
 const ACTION_LABELS: Record<AuditActionType, string> = {
   "x-reading": "X-Reading",
@@ -84,19 +82,25 @@ export async function logPrinterActivity(
   await putOne("printerActivity", { ...log, id: crypto.randomUUID() });
 }
 
-export function AuditTrailPanel() {
+export function AuditTrailPanel({ users }: { users?: User[] }) {
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [printerLog, setPrinterLog] = useState<PrinterActivityLog[]>([]);
   const [loaded, setLoaded] = useState(false);
+
+  const userOptions = useMemo(() => {
+    const names = users?.map((u) => u.fullname) ?? [];
+    return ["All", ...names];
+  }, [users]);
 
   const refresh = useCallback(async () => {
     const [logs, printerEntries] = await Promise.all([
       getAll("auditLog") as Promise<AuditEntry[]>,
       getAll("printerActivity") as Promise<PrinterActivityLog[]>,
     ]);
-    // Sort by timestamp descending
-    setAuditLog(logs.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
-    setPrinterLog(printerEntries.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+    // Sort by timestamp descending and cap to prevent memory bloat on long-running terminals
+    const MAX_AUDIT_ENTRIES = 500;
+    setAuditLog(logs.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, MAX_AUDIT_ENTRIES));
+    setPrinterLog(printerEntries.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, MAX_AUDIT_ENTRIES));
     setLoaded(true);
   }, []);
 
@@ -212,7 +216,7 @@ export function AuditTrailPanel() {
                 value={userFilter}
                 onChange={(e) => setUserFilter(e.target.value)}
               >
-                {USER_OPTIONS.map((u) => (
+                {userOptions.map((u) => (
                   <option key={u} value={u}>
                     {u}
                   </option>

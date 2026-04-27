@@ -3,7 +3,35 @@ import { ensureDb } from "@/lib/server/init";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const record = loginAttempts.get(ip);
+
+  if (!record || now > record.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    return false;
+  }
+
+  if (record.count >= MAX_ATTEMPTS) {
+    return true;
+  }
+
+  record.count++;
+  return false;
+}
+
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "Too many login attempts. Please try again in 15 minutes." },
+      { status: 429 }
+    );
+  }
   await ensureDb();
   const db = getDb();
   const { username, password } = await request.json();
