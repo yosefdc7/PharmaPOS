@@ -68,6 +68,7 @@ function buildProductDraft(overrides?: Partial<Product>): Product {
 
   return {
     id: overrides?.id || crypto.randomUUID(),
+    version: overrides?.version ?? 1,
     name: overrides?.name || "",
     barcode: overrides?.barcode || String(Date.now()).slice(-6),
     categoryId: overrides?.categoryId || "",
@@ -1391,6 +1392,7 @@ function CustomersView({
       "customers",
       {
         id: crypto.randomUUID(),
+        version: 1,
         name: data.name,
         phone: data.phone,
         email: data.email,
@@ -1527,6 +1529,7 @@ function SettingsView({
       "settings",
       {
         id: "store",
+        version: 1,
         store: data.store,
         addressOne: data.addressOne,
         addressTwo: data.addressTwo,
@@ -1546,7 +1549,7 @@ function SettingsView({
     event.preventDefault();
     if (!canPerformAction("categories")) return;
     const data = readForm(event.currentTarget);
-    await save("categories", { id: crypto.randomUUID(), name: data.name }, "category");
+    await save("categories", { id: crypto.randomUUID(), version: 1, name: data.name }, "category");
     event.currentTarget.reset();
   }
 

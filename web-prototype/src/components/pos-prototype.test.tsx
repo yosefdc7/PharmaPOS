@@ -86,6 +86,7 @@ function renderProductsView() {
     resetData: vi.fn(),
     login: vi.fn(),
     logout: vi.fn(),
+    canPerformAction: vi.fn(() => true),
     canAccessView: (view: Parameters<typeof canUserAccessView>[1]) => canUserAccessView(seedUsers[0], view),
     availableViews: ALL_APP_VIEWS,
     observabilitySnapshot: {

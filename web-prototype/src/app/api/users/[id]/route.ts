@@ -13,10 +13,12 @@ function rowToUser(row: Record<string, unknown>) {
   }
   return {
     id: row.id,
+    version: row.version,
     username: row.username,
     fullname: row.fullname,
     role: row.role,
     permissions,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -58,14 +60,14 @@ export async function PUT(
     const hash = await bcrypt.hash(body.password, SALT_ROUNDS);
     const permissions = JSON.stringify(body.permissions ?? {});
     await db.execute({
-      sql: `UPDATE users SET username = ?, fullname = ?, password_hash = ?, role = ?, permissions = ? WHERE id = ?`,
-      args: [body.username, body.fullname ?? "", hash, body.role, permissions, id],
+      sql: `UPDATE users SET username = ?, fullname = ?, password_hash = ?, role = ?, permissions = ?, version = ?, updated_at = ? WHERE id = ?`,
+      args: [body.username, body.fullname ?? "", hash, body.role, permissions, body.version ?? 1, body.updatedAt ?? new Date().toISOString(), id],
     });
   } else {
     const permissions = JSON.stringify(body.permissions ?? {});
     await db.execute({
-      sql: `UPDATE users SET username = ?, fullname = ?, role = ?, permissions = ? WHERE id = ?`,
-      args: [body.username, body.fullname ?? "", body.role, permissions, id],
+      sql: `UPDATE users SET username = ?, fullname = ?, role = ?, permissions = ?, version = ?, updated_at = ? WHERE id = ?`,
+      args: [body.username, body.fullname ?? "", body.role, permissions, body.version ?? 1, body.updatedAt ?? new Date().toISOString(), id],
     });
   }
 

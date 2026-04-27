@@ -18,9 +18,19 @@ describe('sync queue contract', () => {
     const createdAt = new Date().toISOString();
     const payload = JSON.stringify({id: 'txn-123'});
 
+    const resolvedConflict = JSON.stringify({
+      syncItemId: id,
+      entity: 'transaction',
+      entityId: 'txn-123',
+      localVersion: 1,
+      remoteVersion: 2,
+      localPayload: { id: 'txn-123' },
+      remotePayload: { id: 'txn-123', version: 2 },
+    });
+
     await db.execute({
-      sql: 'INSERT INTO sync_queue (id, entity, operation, payload, created_at, status, retry_count, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      args: [id, 'transaction', 'create', payload, createdAt, 'pending', 0, ''],
+      sql: 'INSERT INTO sync_queue (id, entity, operation, payload, created_at, status, retry_count, last_error, resolved_conflict) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [id, 'transaction', 'create', payload, createdAt, 'pending', 0, '', resolvedConflict],
     });
 
     const result = await db.execute({
@@ -37,5 +47,10 @@ describe('sync queue contract', () => {
     expect(item.last_error).toBe('');
     expect(typeof item.id).toBe('string');
     expect(typeof item.created_at).toBe('string');
+    expect(typeof item.resolved_conflict).toBe('string');
+    expect(JSON.parse(String(item.resolved_conflict))).toMatchObject({
+      syncItemId: id,
+      remoteVersion: 2,
+    });
   });
 });

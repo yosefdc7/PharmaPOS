@@ -114,6 +114,7 @@ describe("X-Reading computation from real transactions", () => {
   function buildTx(overrides: Partial<Transaction>): Transaction {
     return {
       id: overrides.id ?? crypto.randomUUID(),
+      version: overrides.version ?? 1,
       localNumber: overrides.localNumber ?? "1",
       customerId: "walk-in",
       cashierId: "usr-1",
@@ -154,6 +155,7 @@ describe("X-Reading computation from real transactions", () => {
     const txs: Transaction[] = [
       {
         id: "t1",
+        version: 1,
         localNumber: "101",
         customerId: "walk-in",
         cashierId: "usr-1",

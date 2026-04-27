@@ -7,6 +7,7 @@ const HELD_SNAKE_MAP: Record<string, string> = {
   scPwdDiscountActive: "sc_pwd_discount_active",
   scPwdDraft: "sc_pwd_draft",
   createdAt: "created_at",
+  updatedAt: "updated_at",
 };
 
 function toSnakeRow(obj: Record<string, unknown>): Record<string, unknown> {
@@ -24,11 +25,16 @@ function toSnakeRow(obj: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   await ensureDb();
   const db = getDb();
 
-  const result = await db.execute("SELECT * FROM held_orders ORDER BY created_at DESC");
+  const since = request.nextUrl.searchParams.get("since");
+  const sql = since
+    ? "SELECT * FROM held_orders WHERE updated_at > ? ORDER BY created_at DESC"
+    : "SELECT * FROM held_orders ORDER BY created_at DESC";
+
+  const result = since ? await db.execute({ sql, args: [since] as InValue[] }) : await db.execute(sql);
 
   const HELD_CAMEL_MAP: Record<string, string> = Object.fromEntries(
     Object.entries(HELD_SNAKE_MAP).map(([k, v]) => [v, k])
@@ -57,7 +63,7 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   const body = await request.json();
 
-  const row = toSnakeRow(body);
+  const row = toSnakeRow({ ...body, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);
   const values = Object.values(row);
   const placeholders = keys.map(() => "?").join(", ");

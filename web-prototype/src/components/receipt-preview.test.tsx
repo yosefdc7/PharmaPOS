@@ -36,6 +36,7 @@ vi.mock("@/lib/printer", () => ({
 
 const transaction: Transaction = {
   id: "txn-1",
+  version: 1,
   localNumber: "1001",
   customerId: "walk-in",
   cashierId: "usr-admin",

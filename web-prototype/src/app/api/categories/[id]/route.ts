@@ -12,9 +12,9 @@ export async function PUT(
   const body = await request.json();
 
   await db.execute({
-    sql: `INSERT INTO categories (id, name) VALUES (?, ?)
-          ON CONFLICT (id) DO UPDATE SET name = excluded.name`,
-    args: [id, body.name],
+    sql: `INSERT INTO categories (id, name, version, updated_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET name = excluded.name, version = excluded.version, updated_at = excluded.updated_at`,
+    args: [id, body.name, body.version ?? 1, body.updatedAt ?? new Date().toISOString()],
   });
 
   return NextResponse.json({ success: true });

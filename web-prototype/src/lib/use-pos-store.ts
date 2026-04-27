@@ -177,6 +177,13 @@ export function usePosStore() {
     setTelemetryEvents((existing) => [...existing.slice(-399), eventWithTs]);
   }, []);
 
+  const withNextVersion = useCallback(<T extends { version?: number }>(entity: T): T & { version: number } => {
+    return {
+      ...entity,
+      version: (entity.version ?? 0) + 1,
+    };
+  }, []);
+
   const refresh = useCallback(async () => {
     const [nextProducts, nextCategories, nextCustomers, nextUsers, nextSettings, nextTransactions, nextHeld, nextSync, nextFlags, nextConflicts] =
       await Promise.all([
@@ -360,6 +367,7 @@ export function usePosStore() {
 
         const transaction: Transaction = {
           id: crypto.randomUUID(),
+          version: 1,
           localNumber: orNumber,
           items: processedCart.map((item) => ({ ...item, lineTotal: money(item.price * item.quantity) })),
           customerId,
@@ -413,7 +421,7 @@ export function usePosStore() {
           };
           setScPwdTransactionLog((prev) => [...prev, row]);
         }
-        const updatedProducts = decrementStock(products, processedCart);
+        const updatedProducts = decrementStock(products, processedCart).map((product) => withNextVersion(product));
         const updatedBir: (BirSettings & { id: string }) | null = bir
           ? { ...bir, id: "bir", currentOrNumber: bir.currentOrNumber + 1 }
           : null;
@@ -486,6 +494,7 @@ export function usePosStore() {
       if (cart.length === 0) return null;
       const order: HeldOrder = {
         id: crypto.randomUUID(),
+        version: 1,
         reference: reference.trim() || `Hold ${heldOrders.length + 1}`,
         items: cart,
         customerId,
@@ -525,11 +534,16 @@ export function usePosStore() {
       entity: T,
       syncEntity: SyncQueueItem["entity"]
     ) => {
-      await putOne(storeName, entity as never);
-      await enqueueSync({ entity: syncEntity, operation: "update", payload: entity });
+      const existing = await getOne(storeName, entity.id);
+      const operation = existing ? "update" : "create";
+      const versionedEntity = operation === "create"
+        ? { ...entity, version: 1 }
+        : withNextVersion(entity);
+      await putOne(storeName, versionedEntity as never);
+      await enqueueSync({ entity: syncEntity, operation, payload: versionedEntity });
       await refresh();
     },
-    [refresh]
+    [refresh, withNextVersion]
   );
 
   const saveUserAccount = useCallback(
@@ -555,8 +569,16 @@ export function usePosStore() {
 
   const removeEntity = useCallback(
     async (storeName: "products" | "categories" | "customers" | "users", id: string, syncEntity: SyncQueueItem["entity"]) => {
+      const existing = await getOne(storeName, id);
+      const payload = {
+        id,
+        version:
+          existing && typeof (existing as { version?: unknown }).version === "number"
+            ? (existing as { version: number }).version + 1
+            : 1,
+      };
       await deleteOne(storeName, id);
-      await enqueueSync({ entity: syncEntity, operation: "delete", payload: { id } });
+      await enqueueSync({ entity: syncEntity, operation: "delete", payload });
       await refresh();
     },
     [refresh]
@@ -673,7 +695,7 @@ export function usePosStore() {
       if (!transaction || transaction.paymentStatus === "refunded") return null;
 
       const refunded = {
-        ...transaction,
+        ...withNextVersion(transaction),
         paymentStatus: "refunded" as const,
         refundReason: reason.trim() || "Operator initiated",
         refundedAt: new Date().toISOString(),
@@ -685,7 +707,7 @@ export function usePosStore() {
       await refresh();
       return refunded;
     },
-    [featureFlags.refunds, refresh, transactions]
+    [featureFlags.refunds, refresh, transactions, withNextVersion]
   );
 
   const resetData = useCallback(async () => {

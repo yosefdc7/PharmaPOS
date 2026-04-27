@@ -37,6 +37,7 @@ export type DrugClassification = "DD, Rx" | "EDD, Rx" | "Rx" | "Pharmacist-Only 
 
 export type Product = {
   id: string;
+  version: number;
   name: string;
   barcode: string;
   categoryId: string;
@@ -88,6 +89,7 @@ export type SyncQueueItem = {
   createdAt: string;
   status: SyncStatus;
   retryCount: number;
+  lastAttemptAt?: string;
   lastError: string;
   entityVersion: number;
   resolvedConflict?: SyncConflict;
@@ -235,11 +237,13 @@ export type RxInspectionSnapshot = {
 
 export type Category = {
   id: string;
+  version: number;
   name: string;
 };
 
 export type Customer = {
   id: string;
+  version: number;
   name: string;
   phone: string;
   email: string;
@@ -248,6 +252,7 @@ export type Customer = {
 
 export type User = {
   id: string;
+  version: number;
   username: string;
   fullname: string;
   role: UserRole;
@@ -274,6 +279,7 @@ export type ScPwdSettings = {
 
 export type Settings = {
   id: "store";
+  version: number;
   store: string;
   addressOne: string;
   addressTwo: string;
@@ -333,6 +339,7 @@ export type ScPwdTransactionMetadata = ScPwdCustomerDetails & {
 
 export type Transaction = {
   id: string;
+  version: number;
   localNumber: string;
   items: TransactionItem[];
   customerId: string;
@@ -357,6 +364,7 @@ export type Transaction = {
 
 export type HeldOrder = {
   id: string;
+  version: number;
   reference: string;
   items: CartItem[];
   customerId: string;

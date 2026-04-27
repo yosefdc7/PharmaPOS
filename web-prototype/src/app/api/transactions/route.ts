@@ -16,6 +16,7 @@ const TX_CAMEL_MAP: Record<string, string> = {
   refund_reason: "refundReason",
   refund_reference: "refundReference",
   sc_pwd_metadata: "scPwdMetadata",
+  updated_at: "updatedAt",
 };
 
 function rowToTx(row: Record<string, unknown>) {
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest) {
   const start = searchParams.get("start");
   const end = searchParams.get("end");
   const status = searchParams.get("status");
+  const since = searchParams.get("since");
 
   let sql = "SELECT * FROM transactions WHERE 1=1";
   const args: InValue[] = [];
@@ -70,6 +72,10 @@ export async function GET(request: NextRequest) {
   if (status) {
     sql += " AND payment_status = ?";
     args.push(status);
+  }
+  if (since) {
+    sql += " AND updated_at > ?";
+    args.push(since);
   }
 
   sql += " ORDER BY created_at DESC";
@@ -89,7 +95,7 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   const body = await request.json();
 
-  const { keys, values } = txToSql(body);
+  const { keys, values } = txToSql({ ...body, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
 
   // Stock decrement is handled by the client sending updated product quantities via putMany
   const placeholders = keys.map(() => "?").join(", ");

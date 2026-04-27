@@ -35,6 +35,7 @@ describe("POS calculations", () => {
     const products: Product[] = [
       {
         id: "a",
+        version: 1,
         name: "Tracked",
         barcode: "1",
         categoryId: "cat",
@@ -48,6 +49,7 @@ describe("POS calculations", () => {
       },
       {
         id: "b",
+        version: 1,
         name: "Service",
         barcode: "2",
         categoryId: "cat",
@@ -76,19 +78,19 @@ describe("POS calculations", () => {
     const fmt = (d: Date) => `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
 
     const expired: Product = {
-      id: "e", name: "Expired", barcode: "3", categoryId: "c", supplier: "", price: 1,
+      id: "e", version: 1, name: "Expired", barcode: "3", categoryId: "c", supplier: "", price: 1,
       quantity: 1, minStock: 0, tracksStock: true, expirationDate: fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 5)), imageColor: "#fff"
     };
     const near: Product = {
-      id: "n", name: "Near", barcode: "4", categoryId: "c", supplier: "", price: 1,
+      id: "n", version: 1, name: "Near", barcode: "4", categoryId: "c", supplier: "", price: 1,
       quantity: 1, minStock: 0, tracksStock: true, expirationDate: fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 3)), imageColor: "#fff"
     };
     const ok: Product = {
-      id: "o", name: "Ok", barcode: "5", categoryId: "c", supplier: "", price: 1,
+      id: "o", version: 1, name: "Ok", barcode: "5", categoryId: "c", supplier: "", price: 1,
       quantity: 1, minStock: 0, tracksStock: true, expirationDate: fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 60)), imageColor: "#fff"
     };
     const service: Product = {
-      id: "s", name: "Service", barcode: "6", categoryId: "c", supplier: "", price: 1,
+      id: "s", version: 1, name: "Service", barcode: "6", categoryId: "c", supplier: "", price: 1,
       quantity: 0, minStock: 0, tracksStock: false, expirationDate: "N/A", imageColor: "#fff"
     };
 
@@ -108,6 +110,7 @@ describe("POS calculations", () => {
 describe("SC/PWD calculations", () => {
   const baseSettings: Settings = {
     id: "store",
+    version: 1,
     store: "Test",
     addressOne: "",
     addressTwo: "",
@@ -132,6 +135,7 @@ describe("SC/PWD calculations", () => {
 
   const medicineProduct: Product = {
     id: "med",
+    version: 1,
     name: "Paracetamol",
     barcode: "1",
     categoryId: "cat",
@@ -149,6 +153,7 @@ describe("SC/PWD calculations", () => {
 
   const nonMedicineProduct: Product = {
     id: "nonmed",
+    version: 1,
     name: "Vitamin C",
     barcode: "2",
     categoryId: "cat",
@@ -166,6 +171,7 @@ describe("SC/PWD calculations", () => {
 
   const excludedProduct: Product = {
     id: "excl",
+    version: 1,
     name: "Consultation",
     barcode: "3",
     categoryId: "cat",

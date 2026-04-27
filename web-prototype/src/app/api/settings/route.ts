@@ -12,6 +12,7 @@ const SETTINGS_CAMEL_MAP: Record<string, string> = {
   receipt_footer: "receiptFooter",
   expiry_alert_days: "expiryAlertDays",
   sc_pwd_settings: "scPwdSettings",
+  updated_at: "updatedAt",
 };
 
 function rowToSettings(row: Record<string, unknown>) {
@@ -48,21 +49,28 @@ function settingsToRow(obj: Record<string, unknown>): Record<string, unknown> {
   return result;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   await ensureDb();
   const db = getDb();
 
+  const since = request.nextUrl.searchParams.get("since");
+  const sql = since
+    ? "SELECT * FROM settings WHERE id = ? AND updated_at > ?"
+    : "SELECT * FROM settings WHERE id = ?";
+  const args = since ? ["store", since] : ["store"];
+
   const result = await db.execute({
-    sql: "SELECT * FROM settings WHERE id = ?",
-    args: ["store"],
+    sql,
+    args,
   });
 
   if (result.rows.length === 0) {
-    return NextResponse.json(null);
+    return NextResponse.json(since ? [] : null);
   }
 
   const row = Object.fromEntries(Object.entries(result.rows[0]).map(([k, v]) => [k, v]));
-  return NextResponse.json(rowToSettings(row));
+  const mapped = rowToSettings(row);
+  return NextResponse.json(since ? [mapped] : mapped);
 }
 
 export async function POST(request: NextRequest) {
@@ -70,7 +78,7 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   const body = await request.json();
 
-  const row = settingsToRow({ id: "store", ...body });
+  const row = settingsToRow({ id: "store", ...body, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);
   const values = Object.values(row);
   const placeholders = keys.map(() => "?").join(", ");

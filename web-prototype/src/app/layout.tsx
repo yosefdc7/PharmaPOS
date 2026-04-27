@@ -3,6 +3,7 @@ import { Poppins } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { SerwistProvider } from "./serwist";
+import { SyncBootstrap } from "./sync-bootstrap";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -61,7 +62,10 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html lang="en">
       <head />
       <body className={poppins.className}>
-        <SerwistProvider swUrl="/serwist/sw.js">{children}</SerwistProvider>
+        <SerwistProvider swUrl="/serwist/sw.js">
+          <SyncBootstrap />
+          {children}
+        </SerwistProvider>
       </body>
     </html>
   );

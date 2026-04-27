@@ -35,7 +35,7 @@ import type {
 } from "./types";
 
 const DB_NAME = "pharmaspot-web-prototype";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 const SESSION_KEY = "pharmapos.auth.session";
 const AUTO_LOGIN_SUPPRESS_KEY = "pharmapos.auth.suppressAutoLogin";
 const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -54,6 +54,7 @@ export type LocalUserUpsert = {
 
 export type StoreName =
   | "meta"
+  | "syncMeta"
   | "products"
   | "categories"
   | "customers"
@@ -75,6 +76,7 @@ export type StoreName =
 
 const STORES: StoreName[] = [
   "meta",
+  "syncMeta",
   "products",
   "categories",
   "customers",
@@ -97,6 +99,7 @@ const STORES: StoreName[] = [
 
 type StoreEntityMap = {
   meta: { id: string; value: unknown };
+  syncMeta: { id: string; value: string };
   products: Product;
   categories: Category;
   customers: Customer;
@@ -238,6 +241,55 @@ function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number
     };
     tx.objectStore("meta").put({ id: "schemaVersion", value: 7 });
   }
+
+  // V8: add syncMeta store, entity versions, and syncQueue retry metadata
+  if (oldVersion < 8) {
+    const syncMetaStore = tx.objectStore("syncMeta");
+    syncMetaStore.put({ id: "global:lastPullTimestamp", value: "" });
+
+    const versionedStores: Array<"products" | "categories" | "customers" | "users" | "settings" | "transactions" | "heldOrders"> = [
+      "products",
+      "categories",
+      "customers",
+      "users",
+      "settings",
+      "transactions",
+      "heldOrders"
+    ];
+
+    for (const storeName of versionedStores) {
+      const store = tx.objectStore(storeName);
+      const cursor = store.openCursor();
+      cursor.onsuccess = (event) => {
+        const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (!result) return;
+        const value = result.value as Record<string, unknown>;
+        if (typeof value.version !== "number") {
+          value.version = 1;
+          store.put(value);
+        }
+        result.continue();
+      };
+    }
+
+    const syncStore = tx.objectStore("syncQueue");
+    const cursor = syncStore.openCursor();
+    cursor.onsuccess = (event) => {
+      const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
+      if (!result) return;
+      const value = result.value as SyncQueueItem;
+      if (!value.lastAttemptAt) {
+        value.lastAttemptAt = value.createdAt;
+      }
+      if (typeof value.entityVersion !== "number") {
+        value.entityVersion = 1;
+      }
+      syncStore.put(value);
+      result.continue();
+    };
+
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 8 });
+  }
 }
 
 export function openPosDb(): Promise<IDBDatabase> {
@@ -359,6 +411,7 @@ export async function saveLocalUserAccount(input: LocalUserUpsert): Promise<User
 
   const storedUser: StoredUser = {
     id: input.id ?? crypto.randomUUID(),
+    version: existing ? existing.version + 1 : 1,
     username: normalizedUsername,
     fullname: normalizedFullname,
     role: input.role,
@@ -392,17 +445,19 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<Fea
 }
 
 export async function enqueueSync(
-  item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError" | "entityVersion">
+  item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError" | "entityVersion" | "lastAttemptAt">
 ): Promise<SyncQueueItem> {
   const storeName = ENTITY_STORE_MAP[item.entity];
-  let entityVersion = 1;
+  const payload = item.payload as Record<string, unknown>;
+  const payloadVersion = typeof payload.version === "number" ? payload.version : undefined;
+  let entityVersion = item.operation === "create" ? 1 : payloadVersion ?? 1;
 
-  if (storeName && item.operation !== "create") {
+  if (storeName && item.operation !== "create" && payloadVersion === undefined) {
     const entityId = getEntityIdForSync(item.payload);
     if (entityId) {
       const existing = await getOne(storeName as StoreName, entityId).catch(() => undefined);
-      if (existing && "version" in existing) {
-        entityVersion = (existing as Record<string, number>).version + 1;
+      if (existing && typeof (existing as { version?: unknown }).version === "number") {
+        entityVersion = ((existing as { version: number }).version + 1);
       }
     }
   }
@@ -412,6 +467,7 @@ export async function enqueueSync(
     createdAt: new Date().toISOString(),
     status: "pending",
     retryCount: 0,
+    lastAttemptAt: new Date().toISOString(),
     lastError: "",
     entityVersion,
     ...item
@@ -454,6 +510,52 @@ export async function markPendingSyncAsSynced(): Promise<void> {
       transaction.syncStatus === "pending" ? { ...transaction, syncStatus: "synced" } : transaction
     )
   );
+}
+
+export async function markTransactionsAsSynced(transactionIds: string[]): Promise<void> {
+  if (transactionIds.length === 0) return;
+  const unique = new Set(transactionIds);
+  const transactions = await getAll("transactions");
+  const updated = transactions.map((transaction) => {
+    if (transaction.syncStatus === "pending" && unique.has(transaction.id)) {
+      return { ...transaction, syncStatus: "synced" as const };
+    }
+    return transaction;
+  });
+  if (updated.some((txn, index) => txn.syncStatus !== transactions[index].syncStatus)) {
+    await putMany("transactions", updated);
+  }
+}
+
+export async function getLastPullTimestamp(entity?: string): Promise<string | null> {
+  const key = entity ? `${entity}:lastPullTimestamp` : "global:lastPullTimestamp";
+  const meta = await getOne("syncMeta", key);
+  if (!meta || typeof meta.value !== "string" || !meta.value) return null;
+  return meta.value;
+}
+
+export async function setLastPullTimestamp(timestamp: string, entity?: string): Promise<void> {
+  const key = entity ? `${entity}:lastPullTimestamp` : "global:lastPullTimestamp";
+  await putOne("syncMeta", { id: key, value: timestamp });
+}
+
+export async function purgeSyncedItems(olderThanMs = 7 * 86400000): Promise<number> {
+  const cutoff = Date.now() - olderThanMs;
+  const queue = await getAll("syncQueue");
+  const staleIds = queue
+    .filter((item) => item.status === "synced" && new Date(item.createdAt).getTime() <= cutoff)
+    .map((item) => item.id);
+
+  if (staleIds.length === 0) return 0;
+
+  const db = await openPosDb();
+  const tx = db.transaction("syncQueue", "readwrite");
+  const store = tx.objectStore("syncQueue");
+  for (const id of staleIds) {
+    store.delete(id);
+  }
+  await completeTransaction(tx);
+  return staleIds.length;
 }
 
 export async function getConflictItems(): Promise<SyncQueueItem[]> {

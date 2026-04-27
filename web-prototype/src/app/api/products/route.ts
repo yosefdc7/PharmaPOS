@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get("search");
   const category = searchParams.get("category");
   const barcode = searchParams.get("barcode");
+  const since = searchParams.get("since");
 
   let sql = "SELECT * FROM products WHERE 1=1";
   const args: InValue[] = [];
@@ -26,6 +27,10 @@ export async function GET(request: NextRequest) {
   if (barcode) {
     sql += " AND barcode = ?";
     args.push(barcode);
+  }
+  if (since) {
+    sql += " AND updated_at > ?";
+    args.push(since);
   }
 
   sql += " ORDER BY name";
@@ -50,7 +55,7 @@ export async function POST(request: NextRequest) {
   // Support both single product and array of products
   const items = Array.isArray(body) ? body : [body];
   const batch = items.map((item: Record<string, unknown>): { sql: string; args: InValue[] } => {
-    const row = toSnakeCase({ ...item });
+    const row = toSnakeCase({ ...item, version: item.version ?? 1, updatedAt: item.updatedAt ?? new Date().toISOString() });
     const keys = Object.keys(row);
     const values = Object.values(row);
     const placeholders = keys.map(() => "?").join(", ");
@@ -85,6 +90,7 @@ const PRODUCT_SNAKE_MAP: Record<string, string> = {
   fdaCprNumber: "fda_cpr_number",
   behindCounter: "behind_counter",
   ddLastReconciliationAt: "dd_last_reconciliation_at",
+  updatedAt: "updated_at",
 };
 
 const PRODUCT_CAMEL_MAP: Record<string, string> = Object.fromEntries(

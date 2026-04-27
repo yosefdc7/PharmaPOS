@@ -16,6 +16,7 @@ const TX_CAMEL_MAP: Record<string, string> = {
   refund_reason: "refundReason",
   refund_reference: "refundReference",
   sc_pwd_metadata: "scPwdMetadata",
+  updated_at: "updatedAt",
 };
 
 function rowToTx(row: Record<string, unknown>) {
@@ -77,7 +78,7 @@ export async function PUT(
   const { id } = await params;
   const body = await request.json();
 
-  const row = txToSql({ ...body, id });
+  const row = txToSql({ ...body, id, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);
   const values = Object.values(row);
 

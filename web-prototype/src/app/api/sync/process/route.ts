@@ -139,15 +139,35 @@ export async function POST(request: NextRequest) {
     const id = item.id as string;
     const entity = item.entity as string;
     const operation = item.operation as string;
-    const payload = JSON.parse(item.payload as string);
     const localVersion = (item.entity_version as number) ?? 1;
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(item.payload as string);
+    } catch {
+      const retryCount = (item.retry_count as number) + 1;
+      if (retryCount >= 5) {
+        await db.execute({
+          sql: "UPDATE sync_queue SET status = 'failed', retry_count = ?, last_error = ? WHERE id = ?",
+          args: [retryCount, "Invalid JSON payload", id] as InValue[],
+        });
+        results.push({ id, entity, operation, status: "failed", error: "Invalid JSON payload" });
+      } else {
+        await db.execute({
+          sql: "UPDATE sync_queue SET retry_count = ?, last_error = ? WHERE id = ?",
+          args: [retryCount, "Invalid JSON payload", id] as InValue[],
+        });
+        results.push({ id, entity, operation, status: "retry", error: "Invalid JSON payload" });
+      }
+      continue;
+    }
 
     try {
       const table = ENTITY_TABLE_MAP[entity];
       let remoteVersion = 0;
       let remoteData: unknown = null;
 
-      if (table && operation !== "create") {
+      if (table) {
         const entityId = getEntityId(payload);
         const existing = await db.execute({
           sql: `SELECT * FROM ${table} WHERE id = ?`,
@@ -161,7 +181,28 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (detectConflict(localVersion, remoteVersion, operation)) {
+      const hasConflict = operation === "create"
+        ? remoteData !== null
+        : detectConflict(localVersion, remoteVersion, operation);
+
+      if (hasConflict) {
+        if (strategy === "manual") {
+          await db.execute({
+            sql: "UPDATE sync_queue SET status = 'conflict', resolved_conflict = ? WHERE id = ?",
+            args: [JSON.stringify({
+              syncItemId: id,
+              entity,
+              entityId: getEntityId(payload),
+              localVersion,
+              remoteVersion,
+              localPayload: payload,
+              remotePayload: remoteData,
+            }), id] as InValue[],
+          });
+          results.push({ id, entity, operation, status: "conflict" });
+          continue;
+        }
+
         let winner: "local" | "remote" | "merged";
 
         if (strategy === "lww") {

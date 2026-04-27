@@ -4,6 +4,7 @@ import { computeDashboardStats } from "@/lib/use-dashboard-stats";
 
 const settings: Settings = {
   id: "store",
+  version: 1,
   store: "Test",
   addressOne: "",
   addressTwo: "",
@@ -19,6 +20,7 @@ const settings: Settings = {
 const users: User[] = [
   {
     id: "usr-1",
+    version: 1,
     username: "admin",
     fullname: "Admin",
     role: "admin",
@@ -46,6 +48,7 @@ const users: User[] = [
 function buildTransaction(overrides: Partial<Transaction>): Transaction {
   return {
     id: overrides.id || crypto.randomUUID(),
+    version: 1,
     localNumber: overrides.localNumber || "OR-1",
     customerId: "walk-in",
     cashierId: "usr-1",
@@ -70,6 +73,7 @@ describe("computeDashboardStats", () => {
     const products: Product[] = [
       {
         id: "p1",
+        version: 1,
         name: "A",
         barcode: "100",
         categoryId: "cat-1",
@@ -123,6 +127,7 @@ describe("computeDashboardStats", () => {
     const products: Product[] = [
       {
         id: "vat",
+        version: 1,
         name: "VAT Product",
         barcode: "101",
         categoryId: "cat-1",
@@ -137,6 +142,7 @@ describe("computeDashboardStats", () => {
       },
       {
         id: "nonvat",
+        version: 1,
         name: "Non VAT Product",
         barcode: "102",
         categoryId: "cat-1",
@@ -184,6 +190,7 @@ describe("computeDashboardStats", () => {
     const products: Product[] = [
       {
         id: "known-cost",
+        version: 1,
         name: "Known Cost",
         barcode: "103",
         categoryId: "cat-1",
@@ -198,6 +205,7 @@ describe("computeDashboardStats", () => {
       },
       {
         id: "missing-cost",
+        version: 1,
         name: "Missing Cost",
         barcode: "104",
         categoryId: "cat-1",
@@ -242,6 +250,7 @@ describe("computeDashboardStats", () => {
     const products: Product[] = [
       {
         id: "exp-30",
+        version: 1,
         name: "Within 30",
         barcode: "201",
         categoryId: "cat-1",
@@ -255,6 +264,7 @@ describe("computeDashboardStats", () => {
       },
       {
         id: "exp-60",
+        version: 1,
         name: "Within 60",
         barcode: "202",
         categoryId: "cat-1",
@@ -268,6 +278,7 @@ describe("computeDashboardStats", () => {
       },
       {
         id: "exp-90",
+        version: 1,
         name: "Within 90",
         barcode: "203",
         categoryId: "cat-1",

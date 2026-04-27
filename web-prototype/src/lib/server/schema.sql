@@ -24,12 +24,16 @@ CREATE TABLE IF NOT EXISTS products (
   dosage_form TEXT,
   fda_cpr_number TEXT,
   behind_counter INTEGER,
-  dd_last_reconciliation_at TEXT
+  dd_last_reconciliation_at TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL
+  name TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS customers (
@@ -37,7 +41,9 @@ CREATE TABLE IF NOT EXISTS customers (
   name TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT ''
+  created_at TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -47,7 +53,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL DEFAULT '',
   role TEXT NOT NULL DEFAULT 'cashier',
   permissions TEXT NOT NULL DEFAULT '{}',
-  status TEXT NOT NULL DEFAULT ''
+  status TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -62,7 +70,9 @@ CREATE TABLE IF NOT EXISTS settings (
   quick_billing INTEGER NOT NULL DEFAULT 0,
   receipt_footer TEXT NOT NULL DEFAULT '',
   expiry_alert_days INTEGER NOT NULL DEFAULT 30,
-  sc_pwd_settings TEXT
+  sc_pwd_settings TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -86,7 +96,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   refund_reason TEXT,
   refund_reference TEXT,
   remarks TEXT,
-  sc_pwd_metadata TEXT
+  sc_pwd_metadata TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS held_orders (
@@ -98,7 +110,9 @@ CREATE TABLE IF NOT EXISTS held_orders (
   remarks TEXT,
   created_at TEXT NOT NULL DEFAULT '',
   sc_pwd_discount_active INTEGER,
-  sc_pwd_draft TEXT
+  sc_pwd_draft TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS sync_queue (
@@ -109,6 +123,7 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   created_at TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   retry_count INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TEXT,
   last_error TEXT NOT NULL DEFAULT '',
   entity_version INTEGER NOT NULL DEFAULT 1,
   resolved_conflict TEXT

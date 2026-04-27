@@ -1,15 +1,16 @@
 import type { Category, Customer, Product, ScPwdSettings, Settings, SyncQueueItem, Transaction, User } from "./types";
 
 export const seedCategories: Category[] = [
-  { id: "cat-pain", name: "Pain Relief" },
-  { id: "cat-cold", name: "Cold & Flu" },
-  { id: "cat-vitamins", name: "Vitamins" },
-  { id: "cat-first-aid", name: "First Aid" }
+  { id: "cat-pain", version: 1, name: "Pain Relief" },
+  { id: "cat-cold", version: 1, name: "Cold & Flu" },
+  { id: "cat-vitamins", version: 1, name: "Vitamins" },
+  { id: "cat-first-aid", version: 1, name: "First Aid" }
 ];
 
 export const seedProducts: Product[] = [
   {
     id: "prd-para-500",
+    version: 1,
     name: "Paracetamol 500mg",
     barcode: "100001",
     categoryId: "cat-pain",
@@ -26,6 +27,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-ibu-200",
+    version: 1,
     name: "Ibuprofen 200mg",
     barcode: "100002",
     categoryId: "cat-pain",
@@ -42,6 +44,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-cough",
+    version: 1,
     name: "Cough Syrup 100ml",
     barcode: "100003",
     categoryId: "cat-cold",
@@ -58,6 +61,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-vitc",
+    version: 1,
     name: "Vitamin C 1000mg",
     barcode: "100004",
     categoryId: "cat-vitamins",
@@ -74,6 +78,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-bandage",
+    version: 1,
     name: "Elastic Bandage",
     barcode: "100005",
     categoryId: "cat-first-aid",
@@ -90,6 +95,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-amox-500",
+    version: 1,
     name: "Amoxicillin 500mg (Rx)",
     barcode: "100007",
     categoryId: "cat-first-aid",
@@ -110,6 +116,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-ceph-250",
+    version: 1,
     name: "Cephalexin 250mg (Rx)",
     barcode: "100008",
     categoryId: "cat-first-aid",
@@ -130,6 +137,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-consult",
+    version: 1,
     name: "Pharmacist Consultation",
     barcode: "100006",
     categoryId: "cat-first-aid",
@@ -146,6 +154,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-masks",
+    version: 1,
     name: "Disposable Face Masks 10s",
     barcode: "100009",
     categoryId: "cat-first-aid",
@@ -162,6 +171,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-aspirin",
+    version: 1,
     name: "Aspirin 81mg",
     barcode: "100010",
     categoryId: "cat-pain",
@@ -178,6 +188,7 @@ export const seedProducts: Product[] = [
   },
   {
     id: "prd-lancets",
+    version: 1,
     name: "Blood Lancets 100s",
     barcode: "100011",
     categoryId: "cat-first-aid",
@@ -195,14 +206,15 @@ export const seedProducts: Product[] = [
 ];
 
 export const seedCustomers: Customer[] = [
-  { id: "walk-in", name: "Walk in customer", phone: "", email: "", createdAt: new Date().toISOString() },
-  { id: "cus-ana", name: "Ana Reyes", phone: "+63 900 111 2222", email: "ana@example.com", createdAt: new Date().toISOString() },
-  { id: "cus-lee", name: "Marcus Lee", phone: "+63 900 333 4444", email: "marcus@example.com", createdAt: new Date().toISOString() }
+  { id: "walk-in", version: 1, name: "Walk in customer", phone: "", email: "", createdAt: new Date().toISOString() },
+  { id: "cus-ana", version: 1, name: "Ana Reyes", phone: "+63 900 111 2222", email: "ana@example.com", createdAt: new Date().toISOString() },
+  { id: "cus-lee", version: 1, name: "Marcus Lee", phone: "+63 900 333 4444", email: "marcus@example.com", createdAt: new Date().toISOString() }
 ];
 
 export const seedUsers: User[] = [
   {
     id: "usr-admin",
+    version: 1,
     username: "admin",
     fullname: "Administrator",
     role: "admin",
@@ -227,6 +239,7 @@ export const seedUsers: User[] = [
   },
   {
     id: "usr-supervisor",
+    version: 1,
     username: "supervisor",
     fullname: "Shift Supervisor",
     role: "supervisor",
@@ -251,6 +264,7 @@ export const seedUsers: User[] = [
   },
   {
     id: "usr-pharmacist",
+    version: 1,
     username: "pharmacist",
     fullname: "Staff Pharmacist",
     role: "pharmacist",
@@ -275,6 +289,7 @@ export const seedUsers: User[] = [
   },
   {
     id: "usr-cashier",
+    version: 1,
     username: "cashier",
     fullname: "Store Cashier",
     role: "cashier",
@@ -310,6 +325,7 @@ const seedScPwdSettings: ScPwdSettings = {
 
 export const seedSettings: Settings = {
   id: "store",
+  version: 1,
   store: "PharmaPOS PH Demo",
   addressOne: "123 Main Street",
   addressTwo: "Makati City",

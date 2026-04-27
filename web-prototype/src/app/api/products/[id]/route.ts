@@ -21,6 +21,7 @@ const PRODUCT_SNAKE_MAP: Record<string, string> = {
   fdaCprNumber: "fda_cpr_number",
   behindCounter: "behind_counter",
   ddLastReconciliationAt: "dd_last_reconciliation_at",
+  updatedAt: "updated_at",
 };
 
 const PRODUCT_CAMEL_MAP: Record<string, string> = Object.fromEntries(
@@ -81,7 +82,7 @@ export async function PUT(
   const { id } = await params;
   const body = await request.json();
 
-  const row = toSnakeCase({ ...body, id });
+  const row = toSnakeCase({ ...body, id, version: body.version ?? 1, updatedAt: body.updatedAt ?? new Date().toISOString() });
   const keys = Object.keys(row);
   const values = Object.values(row);
 

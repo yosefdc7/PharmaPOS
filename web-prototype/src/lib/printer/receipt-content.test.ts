@@ -37,6 +37,7 @@ const defaultBir: BirSettings = {
 function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
   return {
     id: 'TXN-001',
+    version: 1,
     localNumber: 'OR-100',
     items: [],
     customerId: 'CUST-001',
