@@ -1,6 +1,5 @@
 import bcrypt from "bcryptjs";
 import { DEFAULT_FEATURE_FLAGS, mergeFeatureFlags, type FeatureFlags } from "./feature-flags";
-import { encryptPayload, payloadContainsPhi, type EncryptedData } from "./encryption";
 import {
   seedBirSettings,
   seedCategories,
@@ -174,13 +173,10 @@ export function shouldAutoLogin(): boolean {
 
 function ensureStores(db: IDBDatabase, tx: IDBTransaction): void {
   for (const storeName of STORES) {
-    let store: IDBObjectStore;
-    if (!db.objectStoreNames.contains(storeName)) {
-      store = db.createObjectStore(storeName, { keyPath: "id" });
-    } else {
-      store = tx.objectStore(storeName);
-    }
-    // Ensure secondary indexes for sync and query performance
+    const store = db.objectStoreNames.contains(storeName)
+      ? tx.objectStore(storeName)
+      : db.createObjectStore(storeName, { keyPath: "id" });
+
     if (storeName === "syncQueue" && !store.indexNames.contains("status")) {
       store.createIndex("status", "status", { unique: false });
     }
@@ -234,11 +230,6 @@ function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number
   // V6: add supervisorAcks store for role-based permissions
   if (oldVersion < 6) {
     tx.objectStore("meta").put({ id: "schemaVersion", value: 6 });
-  }
-
-  // V7: add secondary indexes for syncQueue, transactions, and products
-  if (oldVersion < 7) {
-    tx.objectStore("meta").put({ id: "schemaVersion", value: 7 });
   }
 }
 
@@ -354,15 +345,6 @@ export async function putMany<TStore extends StoreName>(
   await completeTransaction(tx);
 }
 
-// Dedicated function for storing users with password hashes (type-safe, avoids cast bypass)
-export async function putManyUsers(values: StoredUser[]): Promise<void> {
-  const db = await openPosDb();
-  const tx = db.transaction("users", "readwrite");
-  const store = tx.objectStore("users");
-  values.forEach((value) => store.put(value));
-  await completeTransaction(tx);
-}
-
 export async function saveLocalUserAccount(input: LocalUserUpsert): Promise<User> {
   const normalizedUsername = input.username.trim();
   const normalizedFullname = input.fullname.trim();
@@ -420,20 +402,13 @@ export async function setFeatureFlags(flags: Partial<FeatureFlags>): Promise<Fea
 export async function enqueueSync(
   item: Omit<SyncQueueItem, "id" | "createdAt" | "status" | "retryCount" | "lastError">
 ): Promise<SyncQueueItem> {
-  // Auto-encrypt PHI payloads before storing in sync queue
-  let encrypted: EncryptedData | undefined;
-  if (payloadContainsPhi(item.payload)) {
-    encrypted = await encryptPayload(item.payload);
-  }
-
   const syncItem: SyncQueueItem = {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     status: "pending",
     retryCount: 0,
     lastError: "",
-    ...item,
-    encrypted
+    ...item
   };
   await putOne("syncQueue", syncItem);
   return syncItem;
@@ -623,7 +598,7 @@ export async function seedIfNeeded(): Promise<void> {
     );
     const hasMissingHashes = nextUsers.some((user, index) => !isStoredUser((rawUsers as Array<User | StoredUser>)[index]));
     if (hasMissingHashes) {
-      await putManyUsers(nextUsers);
+      await putMany("users", nextUsers as unknown as User[]);
     }
     return;
   }
@@ -637,7 +612,7 @@ export async function seedIfNeeded(): Promise<void> {
       passwordHash: await bcrypt.hash(defaultPasswordForUser(user), BCRYPT_SALT_ROUNDS)
     }))
   );
-  await putManyUsers(seededUsers);
+  await putMany("users", seededUsers as unknown as User[]);
   await putMany("transactions", seedTransactions);
   await putMany("syncQueue", seedSyncQueue);
   await putOne("settings", seedSettings);
@@ -676,66 +651,6 @@ const PROTECTED_STORES = [
   "printerActivity",
 ] as const;
 
-export async function atomicSaleWrite(
-  products: Product[],
-  transaction: Transaction,
-  birSettings: (BirSettings & { id: string }) | null
-): Promise<void> {
-  const storeNames: StoreName[] = ["products", "transactions"];
-  if (birSettings) storeNames.push("birSettings");
-
-  const db = await openPosDb();
-  const tx = db.transaction(storeNames, "readwrite");
-
-  for (const product of products) {
-    tx.objectStore("products").put(product);
-  }
-
-  tx.objectStore("transactions").put(transaction);
-
-  if (birSettings) {
-    tx.objectStore("birSettings").put(birSettings);
-  }
-
-  await completeTransaction(tx);
-}
-
-export async function getConflictItems(): Promise<SyncQueueItem[]> {
-  return getByIndex("syncQueue", "status", "conflict");
-}
-
-export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
-  const results = await getByIndex("products", "barcode", barcode);
-  return results[0] as Product | undefined;
-}
-
-export async function exportAllData(): Promise<Record<string, unknown[]>> {
-  const data: Record<string, unknown[]> = {};
-  for (const storeName of STORES) {
-    if (storeName === "users") {
-      // Export sanitized users (no password hashes)
-      data[storeName] = await getAll(storeName);
-    } else {
-      data[storeName] = await getAll(storeName);
-    }
-  }
-  return data;
-}
-
-export async function importAllData(data: Record<string, unknown[]>): Promise<void> {
-  const db = await openPosDb();
-  const tx = db.transaction(STORES, "readwrite");
-  for (const storeName of STORES) {
-    const store = tx.objectStore(storeName);
-    store.clear();
-    const items = data[storeName] || [];
-    for (const item of items) {
-      store.put(item);
-    }
-  }
-  await completeTransaction(tx);
-}
-
 export async function resetPrototypeData(): Promise<void> {
   // Read hardBlockPrototypeReset flag before clearing anything
   const rxSettings = await getOne("rxSettings", "rx-settings");
@@ -766,6 +681,80 @@ export async function resetPrototypeData(): Promise<void> {
 
   await completeTransaction(tx);
   await seedIfNeeded();
+}
+
+export async function getConflictItems(): Promise<SyncQueueItem[]> {
+  return getByIndex("syncQueue", "status", "conflict");
+}
+
+export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
+  const matches = await getByIndex("products", "barcode", barcode);
+  return matches[0];
+}
+
+export async function atomicSaleWrite(
+  updatedProducts: Product[],
+  transaction: Transaction,
+  updatedBir: (BirSettings & { id: string }) | null
+): Promise<void> {
+  const db = await openPosDb();
+  const storeNames: StoreName[] = ["products", "transactions"];
+  if (updatedBir) {
+    storeNames.push("birSettings");
+  }
+  const tx = db.transaction(storeNames, "readwrite");
+  const productStore = tx.objectStore("products");
+  for (const product of updatedProducts) {
+    productStore.put(product);
+  }
+  tx.objectStore("transactions").put(transaction);
+  if (updatedBir) {
+    tx.objectStore("birSettings").put(updatedBir);
+  }
+  await completeTransaction(tx);
+}
+
+export type ExportedData = Record<string, unknown[]>;
+
+export async function exportAllData(): Promise<ExportedData> {
+  const db = await openPosDb();
+  const result: ExportedData = {};
+  const tx = db.transaction(STORES, "readonly");
+  await new Promise<void>((resolve, reject) => {
+    let pending = STORES.length;
+    for (const storeName of STORES) {
+      const req = tx.objectStore(storeName).getAll();
+      req.onsuccess = () => {
+        if (storeName === "users") {
+          result[storeName] = (req.result as unknown[])
+            .filter(isStoredUser)
+            .map(sanitizeUser);
+        } else {
+          result[storeName] = req.result;
+        }
+        pending--;
+        if (pending === 0) resolve();
+      };
+      req.onerror = () => reject(req.error);
+    }
+  });
+  return result;
+}
+
+export async function importAllData(data: ExportedData): Promise<void> {
+  const db = await openPosDb();
+  const tx = db.transaction(STORES, "readwrite");
+  for (const storeName of STORES) {
+    const store = tx.objectStore(storeName);
+    store.clear();
+    const records = data[storeName];
+    if (Array.isArray(records)) {
+      for (const record of records) {
+        store.put(record);
+      }
+    }
+  }
+  await completeTransaction(tx);
 }
 
 export async function resetPosDbForTests(): Promise<void> {
