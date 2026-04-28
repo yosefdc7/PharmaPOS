@@ -1,0 +1,28 @@
+# Legacy Electron app directories - not part of web deployment
+api/
+bridge/
+installers/
+assets/
+coverage/
+screenshots/
+shared-memory/
+tests/
+docs/
+
+# Electron app files
+renderer.js
+server.js
+start.js
+build.js
+gulpfile.js
+forge.config.js
+app.config.js
+index.html
+latest-yml.js
+
+# Lock files that trigger yarn
+yarn.lock
+yarn-error.log
+
+# Node modules
+node_modules/
