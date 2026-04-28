@@ -110,6 +110,7 @@ export function PosPrototype() {
   const store = usePosStore();
   const [view, setView] = useState<AppViewKey>("pos");
   const [navOpen, setNavOpen] = useState(true);
+  const [cartOpen, setCartOpen] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -122,6 +123,7 @@ export function PosPrototype() {
   const [showReceiptPreview, setShowReceiptPreview] = useState(false);
   const [receiptVariant, setReceiptVariant] = useState<"normal" | "void" | "reprint">("normal");
   const [showScPwdModal, setShowScPwdModal] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const settings = store.settings;
   const symbol = settings?.currencySymbol || "$";
@@ -139,6 +141,19 @@ export function PosPrototype() {
       setView(nextView);
     }
   }, [store.currentUser, view]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia("(max-width: 760px)");
+    if (mql.matches) {
+      setNavOpen(false);
+    }
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) setNavOpen(false);
+    };
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const text = query.trim().toLowerCase();
@@ -257,6 +272,7 @@ export function PosPrototype() {
 
   return (
     <main className={`app-shell ${navOpen ? "nav-open" : "nav-closed"}`}>
+      {navOpen && <div className="side-nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
       <aside className={`side-nav ${navOpen ? "open" : "closed"}`}>
         <div className="brand">
           <span className="brand-mark">+</span>
@@ -265,6 +281,43 @@ export function PosPrototype() {
             <small>Offline-first prototype</small>
           </div>
         </div>
+
+        {/* User controls section - top */}
+        <div className="side-nav-user-controls">
+          <label className="side-nav-user-label">
+            User
+            <select
+              value={store.currentUser?.username ?? ""}
+              onChange={async (event) => {
+                const targetUsername = event.currentTarget.value;
+                if (targetUsername === store.currentUser?.username) return;
+
+                // Prompt for password when switching to a different user
+                // TODO: replace with a proper modal for production UX
+                const password = typeof window !== "undefined" && typeof window.prompt === "function"
+                  ? window.prompt(`Enter password for ${targetUsername}:`)
+                  : null;
+
+                const success = await store.switchUser(targetUsername, password ?? undefined);
+                if (!success && typeof window !== "undefined" && typeof window.alert === "function") {
+                  window.alert("Switch failed: incorrect password or insufficient privileges.");
+                  // Revert select to current user
+                  event.currentTarget.value = store.currentUser?.username ?? "";
+                }
+              }}
+            >
+              {store.users.map((user) => (
+                <option key={user.id} value={user.username}>
+                  {user.fullname}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className={`side-nav-online-status ${store.online ? "online" : "offline"}`} onClick={() => store.setForcedOffline(!store.forcedOffline)}>
+            {store.online ? "Online" : "Offline"}
+          </button>
+        </div>
+
         <nav>
           {visibleViews.map((item) => (
             <button
@@ -277,6 +330,13 @@ export function PosPrototype() {
             </button>
           ))}
         </nav>
+
+        {/* Log out button - bottom */}
+        <div className="side-nav-footer">
+          <button type="button" className="side-nav-logout" onClick={store.logout}>
+            Log out
+          </button>
+        </div>
       </aside>
 
       <section className="workspace">
@@ -288,7 +348,7 @@ export function PosPrototype() {
               aria-label={navOpen ? "Collapse sidebar" : "Expand sidebar"}
               onClick={() => setNavOpen((current) => !current)}
             >
-              {navOpen ? "â€¹" : "â€º"}
+              {navOpen ? "<" : ">"}
             </button>
             <div>
               <h1>{views.find((item) => item.key === activeView)?.label}</h1>
@@ -300,233 +360,234 @@ export function PosPrototype() {
             <span className={`status ${store.storagePersistence === "granted" ? "online" : "offline"}`}>
               Storage {store.storagePersistence === "granted" ? "protected" : store.storagePersistence}
             </span>
-            <label className="select-label">
-              User
-              <select
-                value={store.currentUser?.username ?? ""}
-                onChange={async (event) => {
-                  const targetUsername = event.target.value;
-                  if (targetUsername === store.currentUser?.username) return;
-
-                  // Prompt for password when switching to a different user
-                  // TODO: replace with a proper modal for production UX
-                  const password = typeof window !== "undefined"
-                    ? window.prompt(`Enter password for ${targetUsername}:`)
-                    : null;
-
-                  const success = await store.switchUser(targetUsername, password ?? undefined);
-                  if (!success && typeof window !== "undefined") {
-                    window.alert("Switch failed: incorrect password or insufficient privileges.");
-                    // Revert select to current user
-                    event.currentTarget.value = store.currentUser?.username ?? "";
-                  }
-                }}
-              >
-                {store.users.map((user) => (
-                  <option key={user.id} value={user.username}>
-                    {user.fullname}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className={store.online ? "status online" : "status offline"} onClick={() => store.setForcedOffline(!store.forcedOffline)}>
-              {store.online ? "Online" : "Offline"}
-            </button>
-            <button type="button" onClick={store.logout}>Log out</button>
           </div>
         </header>
 
         {activeView === "pos" ? (
-          <section className="pos-grid">
-            <section className="product-workspace panel">
-              <div className="toolbar">
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product, SKU, supplier" />
-                <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-                  <option value="all">All categories</option>
-                  {store.categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-                <select value={productSort} onChange={(event) => setProductSort(event.target.value as ProductSortKey)}>
-                  <option value="recent">Recent</option>
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="top-sold">Top sold</option>
-                </select>
-                <button type="button" onClick={() => setShowReprintQueue(true)} style={{ marginLeft: "auto" }}>
-                  Reprint Queue
-                </button>
-                <button type="button" onClick={() => { setReceiptVariant("normal"); setShowReceiptPreview(true); }}>
-                  Preview OR
-                </button>
-              </div>
-              <div className="product-grid">
-                {filteredProducts.map((product) => (
-                  <button
-                    key={product.id}
-                    className={`product-card ${isLowStock(product) ? "low" : ""}`}
-                    onClick={() => store.addToCart(product)}
-                  >
-                    <span className="product-image" style={{ background: product.imageColor }}>
-                      {product.name.slice(0, 2).toUpperCase()}
-                    </span>
-                    <div className="product-body">
-                      <strong className="product-name">{product.name}</strong>
-                      <span className={`badge ${getDrugClassBadge(product.drugClassification).className}`}>
-                        {getDrugClassBadge(product.drugClassification).label}
+          <>
+            {cartOpen && <div className="cart-drawer-overlay" onClick={() => setCartOpen(false)} aria-hidden="true" />}
+            <section className="pos-grid">
+              <section className="product-workspace panel">
+                <div className="toolbar">
+                  <div className="toolbar-search">
+                    <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search product, SKU, supplier" />
+                    <button type="button" className="toolbar-filter-toggle" onClick={() => setFiltersOpen((f) => !f)} aria-label="Toggle filters">
+                      &#9776;
+                    </button>
+                  </div>
+                  <div className={`toolbar-filters ${filtersOpen ? "open" : ""}`}>
+                    <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                      <option value="all">All categories</option>
+                      {store.categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select value={productSort} onChange={(event) => setProductSort(event.target.value as ProductSortKey)}>
+                      <option value="recent">Recent</option>
+                      <option value="newest">Newest</option>
+                      <option value="oldest">Oldest</option>
+                      <option value="top-sold">Top sold</option>
+                    </select>
+                  </div>
+                  <div className="toolbar-actions">
+                    <button type="button" onClick={() => setShowReprintQueue(true)}>
+                      Reprint Queue
+                    </button>
+                    <button type="button" onClick={() => { setReceiptVariant("normal"); setShowReceiptPreview(true); }}>
+                      Preview OR
+                    </button>
+                  </div>
+                </div>
+                <div className="product-grid">
+                  {filteredProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      className={`product-card ${isLowStock(product) ? "low" : ""}`}
+                      onClick={() => store.addToCart(product)}
+                    >
+                      <span className="product-image" style={{ background: product.imageColor }}>
+                        {product.name.slice(0, 2).toUpperCase()}
                       </span>
-                      <div className="product-meta">
-                        <div className="product-copy">
-                          <span className="product-sku">SKU {product.barcode}</span>
-                          <span className="product-stock">{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
-                        </div>
-                        <div className="product-pricing">
+                      <div className="product-body">
+                        <strong className="product-name">{product.name}</strong>
+                        <div className="product-meta-row">
+                          <div className="product-meta-left">
+                            <span className={`badge ${getDrugClassBadge(product.drugClassification).className}`}>
+                              {getDrugClassBadge(product.drugClassification).label}
+                            </span>
+                            <span className="product-sku">SKU {product.barcode}</span>
+                            <span className="product-stock">{product.tracksStock ? `${product.quantity} in stock` : "Service"}</span>
+                          </div>
                           <span className="product-price">{formatCurrency(symbol, product.price)}</span>
                         </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <aside className="cart-panel panel">
-              <div className="cart-head">
-                <h2>Current Sale</h2>
-                <button onClick={store.clearCart}>Clear</button>
-              </div>
-              <label>
-                Customer
-                <select value={store.customerId} onChange={(event) => store.setCustomerId(event.target.value)}>
-                  {store.customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="cart-lines">
-                {store.cart.length === 0 ? <p className="empty">No items yet.</p> : null}
-                {store.cart.map((item) => (
-                  <div className="cart-line" key={item.productId}>
-                    <strong>{item.productName}</strong>
-                    <div className="qty-controls">
-                      <button onClick={() => store.updateCartQuantity(item.productId, item.quantity - 1)}>-</button>
-                      <input
-                        value={item.quantity}
-                        onChange={(event) => store.updateCartQuantity(item.productId, Number(event.target.value))}
-                      />
-                      <button onClick={() => store.updateCartQuantity(item.productId, item.quantity + 1)}>+</button>
-                    </div>
-                    <span>{formatCurrency(symbol, item.price * item.quantity)}</span>
-                    <button onClick={() => store.removeFromCart(item.productId)}>x</button>
-                  </div>
-                ))}
-              </div>
-
-              {settings.scPwdSettings?.enabled && store.cart.length > 0 && (
-                <div className="scpwd-cart-actions">
-                  <button
-                    type="button"
-                    className={store.activeScPwdDiscount ? "active" : ""}
-                    onClick={() => setShowScPwdModal(true)}
-                  >
-                    {store.activeScPwdDiscount ? "SC/PWD Active â€” Edit" : "Apply SC/PWD Discount"}
-                  </button>
-                </div>
-              )}
-
-              {store.activeScPwdDiscount && settings.scPwdSettings && (
-                <>
-                  <ScpwdBreakdownCard
-                    cart={store.cart}
-                    products={store.products}
-                    settings={settings}
-                    scPwdSettings={settings.scPwdSettings}
-                    symbol={symbol}
-                  />
-                  <ScpwdEligibilityWarning cartItems={store.cart} products={store.products} />
-                </>
-              )}
-
-              <div className="totals">
-                <span>Items</span>
-                <strong>{store.totals.itemCount}</strong>
-                <span>Subtotal</span>
-                <strong>{formatCurrency(symbol, store.totals.subtotal)}</strong>
-                <span>% Discount</span>
-                <input
-                  value={store.discount}
-                  type="number"
-                  min="0"
-                  disabled={store.activeScPwdDiscount}
-                  title={store.activeScPwdDiscount ? "Manual discount disabled while SC/PWD discount is active" : ""}
-                  onChange={(event) => store.setDiscount(Number(event.target.value))}
-                />
-                <span>VAT</span>
-                <strong>{formatCurrency(symbol, store.totals.tax)}</strong>
-                <span>Total</span>
-                <strong className="grand">{formatCurrency(symbol, store.totals.total)}</strong>
-                <span>Remarks</span>
-                <input value={store.remarks} onChange={(event) => store.setRemarks(event.target.value)} placeholder="Order notes..." />
-              </div>
-              <div className="payment-box">
-                <div className="segmented">
-                  <button className={paymentMethod === "cash" ? "active" : ""} onClick={() => setPaymentMethod("cash")}>
-                    Cash
-                  </button>
-                  <button
-                    className={paymentMethod === "external-terminal" ? "active" : ""}
-                    onClick={() => setPaymentMethod("external-terminal")}
-                  >
-                    External terminal
-                  </button>
-                </div>
-                {paymentMethod === "cash" ? (
-                  <input
-                    type="number"
-                    value={paymentReceived}
-                    onChange={(event) => setPaymentReceived(event.target.value)}
-                    placeholder="Cash received"
-                  />
-                ) : (
-                  <input
-                    value={paymentReference}
-                    onChange={(event) => setPaymentReference(event.target.value)}
-                    placeholder="Terminal reference"
-                  />
-                )}
-                <button className="primary" disabled={store.cart.length === 0} onClick={completeSale}>
-                  Complete sale
-                </button>
-              </div>
-              <div className="hold-box">
-                <input value={holdReference} onChange={(event) => setHoldReference(event.target.value)} placeholder="Hold reference" />
-                <button disabled={store.cart.length === 0} onClick={holdCurrentOrder}>
-                  Hold order
-                </button>
-              </div>
-              {store.heldOrders.length > 0 ? (
-                <div className="held-list">
-                  <h3>Held orders</h3>
-                  {store.heldOrders.map((order) => (
-                    <button
-                      key={order.id}
-                      disabled={!store.canPerformAction("transactions")}
-                      onClick={() => {
-                        if (!store.canPerformAction("transactions")) return;
-                        store.resumeHeldOrder(order);
-                      }}
-                    >
-                      {order.reference} - {order.items.length} lines
+                      <span className="product-chevron">›</span>
                     </button>
                   ))}
                 </div>
-              ) : null}
-            </aside>
-          </section>
+              </section>
+
+              <aside className={`cart-panel panel${cartOpen ? " open" : ""}`}>
+                <div
+                  className="cart-drawer-handle"
+                  onClick={() => setCartOpen((prev) => !prev)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={cartOpen ? "Minimize cart" : "Open cart"}
+                  aria-expanded={cartOpen}
+                >
+                  <span className="cart-drawer-grip" />
+                  <div className="cart-drawer-peek">
+                    <strong>Cart</strong>
+                    <span>{store.totals.itemCount} items</span>
+                    <strong>{formatCurrency(symbol, store.totals.total)}</strong>
+                  </div>
+                </div>
+                <div className="cart-head">
+                  <h2>Current Sale</h2>
+                  <button onClick={store.clearCart}>Clear</button>
+                </div>
+                <label>
+                  Customer
+                  <select value={store.customerId} onChange={(event) => store.setCustomerId(event.target.value)}>
+                    {store.customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="cart-lines">
+                  {store.cart.length === 0 ? <p className="empty">No items yet.</p> : null}
+                  {store.cart.map((item) => (
+                    <div className="cart-line" key={item.productId}>
+                      <strong>{item.productName}</strong>
+                      <div className="qty-controls">
+                        <button onClick={() => store.updateCartQuantity(item.productId, item.quantity - 1)}>-</button>
+                        <input
+                          value={item.quantity}
+                          onChange={(event) => store.updateCartQuantity(item.productId, Number(event.target.value))}
+                        />
+                        <button onClick={() => store.updateCartQuantity(item.productId, item.quantity + 1)}>+</button>
+                      </div>
+                      <span>{formatCurrency(symbol, item.price * item.quantity)}</span>
+                      <button onClick={() => store.removeFromCart(item.productId)}>x</button>
+                    </div>
+                  ))}
+                </div>
+
+                {settings.scPwdSettings?.enabled && store.cart.length > 0 && (
+                  <div className="scpwd-cart-actions">
+                    <button
+                      type="button"
+                      className={store.activeScPwdDiscount ? "active" : ""}
+                      onClick={() => setShowScPwdModal(true)}
+                    >
+                      {store.activeScPwdDiscount ? "SC/PWD Active \u2014 Edit" : "Apply SC/PWD Discount"}
+                    </button>
+                  </div>
+                )}
+
+                {store.activeScPwdDiscount && settings.scPwdSettings && (
+                  <>
+                    <ScpwdBreakdownCard
+                      cart={store.cart}
+                      products={store.products}
+                      settings={settings}
+                      scPwdSettings={settings.scPwdSettings}
+                      symbol={symbol}
+                    />
+                    <ScpwdEligibilityWarning cartItems={store.cart} products={store.products} />
+                  </>
+                )}
+
+                <div className="totals">
+                  <span>Items</span>
+                  <strong>{store.totals.itemCount}</strong>
+                  <span>Subtotal</span>
+                  <strong>{formatCurrency(symbol, store.totals.subtotal)}</strong>
+                  <span>% Discount</span>
+                  <input
+                    value={store.discount}
+                    type="number"
+                    min="0"
+                    disabled={store.activeScPwdDiscount}
+                    title={store.activeScPwdDiscount ? "Manual discount disabled while SC/PWD discount is active" : ""}
+                    onChange={(event) => store.setDiscount(Number(event.target.value))}
+                  />
+                  <span>VAT</span>
+                  <strong>{formatCurrency(symbol, store.totals.tax)}</strong>
+                  <span>Total</span>
+                  <strong className="grand">{formatCurrency(symbol, store.totals.total)}</strong>
+                  <span>Remarks</span>
+                  <input value={store.remarks} onChange={(event) => store.setRemarks(event.target.value)} placeholder="Order notes..." />
+                </div>
+                <div className="payment-box">
+                  <div className="segmented">
+                    <button className={paymentMethod === "cash" ? "active" : ""} onClick={() => setPaymentMethod("cash")}>
+                      Cash
+                    </button>
+                    <button
+                      className={paymentMethod === "external-terminal" ? "active" : ""}
+                      onClick={() => setPaymentMethod("external-terminal")}
+                    >
+                      External terminal
+                    </button>
+                  </div>
+                  {paymentMethod === "cash" ? (
+                    <input
+                      type="number"
+                      value={paymentReceived}
+                      onChange={(event) => setPaymentReceived(event.target.value)}
+                      placeholder="Cash received"
+                    />
+                  ) : (
+                    <input
+                      value={paymentReference}
+                      onChange={(event) => setPaymentReference(event.target.value)}
+                      placeholder="Terminal reference"
+                    />
+                  )}
+                  <button className="primary" disabled={store.cart.length === 0} onClick={completeSale}>
+                    Complete sale
+                  </button>
+                </div>
+                <div className="hold-box">
+                  <input value={holdReference} onChange={(event) => setHoldReference(event.target.value)} placeholder="Hold reference" />
+                  <button disabled={store.cart.length === 0} onClick={holdCurrentOrder}>
+                    Hold order
+                  </button>
+                </div>
+                {store.heldOrders.length > 0 ? (
+                  <div className="held-list">
+                    <h3>Held orders</h3>
+                    {store.heldOrders.map((order) => (
+                      <button
+                        key={order.id}
+                        disabled={!store.canPerformAction("transactions")}
+                        onClick={() => {
+                          if (!store.canPerformAction("transactions")) return;
+                          store.resumeHeldOrder(order);
+                        }}
+                      >
+                        {order.reference} - {order.items.length} lines
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </aside>
+            </section>
+            <button
+              className="cart-fab"
+              onClick={() => setCartOpen(true)}
+              aria-label={`Open cart, ${store.totals.itemCount} items`}
+            >
+              Cart
+              {store.totals.itemCount > 0 && <span className="cart-fab-badge">{store.totals.itemCount}</span>}
+            </button>
+          </>
         ) : null}
 
         {activeView === "products" ? (

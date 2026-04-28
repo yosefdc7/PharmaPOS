@@ -1,0 +1,24 @@
+# Dev/test artifacts - not needed in deployment
+_fix_tests.js
+_fix_tests.py
+_fix_db_test.py
+_write_tests.mjs
+write-tests.py
+patch-tests.py
+pharmaspot.db
+nul
+
+# Test directories
+e2e/
+test-results/
+coverage/
+
+# Config files not needed at deploy time
+vitest.config.ts
+playwright.config.ts
+tsconfig.tsbuildinfo
+
+# Documentation
+docs/
+AUDIT_FINDINGS.md
+README.md
