@@ -2238,7 +2238,7 @@ function SyncView({
                 </button>
                 <button
                   onClick={() => resolveConflict(item.id, "merged")}
-                  style={{ padding: "4px 12px", background: "#a855f7", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                  style={{ padding: "4px 12px", background: "#127E9D", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
                 >
                   Merge
                 </button>

@@ -13,7 +13,7 @@ export default function OfflinePage() {
           onClick={() => window.location.reload()}
           style={{
             padding: "0.75rem 1.5rem",
-            background: "#635BFF",
+            background: "#1F7ED6",
             color: "#fff",
             border: "none",
             borderRadius: "8px",
