@@ -60,7 +60,7 @@ export function ControlTowerView({
   const donutStops = stats.trends.categoryMix
     .reduce<{ start: number; color: string; label: string }[]>((acc, slice, index) => {
       const start = index === 0 ? 0 : acc[index - 1].start + stats.trends.categoryMix[index - 1].share;
-      acc.push({ start, color: ["#00AD1D", "#635BFF", "#0EA5E9", "#F59E0B", "#EF4444", "#14B8A6"][index % 6], label: slice.categoryName });
+      acc.push({ start, color: ["#00AD1D", "#1F7ED6", "#0EA5E9", "#F59E0B", "#EF4444", "#14B8A6"][index % 6], label: slice.categoryName });
       return acc;
     }, [])
     .map((item, index) => {

@@ -100,7 +100,7 @@ export function OverrideModal({ actionType, actionLabel, targetId, supervisors, 
             onClick={handleSubmit}
             style={{
               padding: "0.5rem 1rem", border: "none", borderRadius: "6px",
-              background: "#635BFF", color: "#fff", cursor: "pointer", fontSize: "0.875rem",
+              background: "#1F7ED6", color: "#fff", cursor: "pointer", fontSize: "0.875rem",
             }}
           >
             Authorize
