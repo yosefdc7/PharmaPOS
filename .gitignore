@@ -11,3 +11,7 @@ coverage
 # Windows reserved name (accidental `echo > nul` creates this in repo root)
 nul
 .vercel
+
+# Local Kilo runtime/task artifacts
+.kilocode/task_history.json
+.kilocode/tasks/
