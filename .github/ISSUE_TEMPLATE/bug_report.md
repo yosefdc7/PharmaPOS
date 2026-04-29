@@ -27,9 +27,9 @@ Describe what actually happened. Be specific and provide any error messages or s
 If applicable, add screenshots to help explain your problem.
 
 ## Environment
-- **Electron Version:** [Specify the version of Electron you are using]
+- **App area:** [e.g. POS, inventory, customers, reports, settings, printer]
 - **Operating System:** [Provide the name and version of the operating system]
-- **Node.js Version:** [Specify the version of Node.js, if relevant]
+- **Browser:** [e.g. Chrome 125, Edge 124]
 
 ## Additional context
 Add any other context about the problem here.

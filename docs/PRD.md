@@ -10,9 +10,6 @@
 | One-liner | Easy point of sale for pharmacies (Patterns Digital / product marketing) |
 | Version | From root `package.json` `version` |
 | Primary app | Next.js web prototype (`web-prototype/`) |
-| Reference only | Electron app (`start.js`, `server.js`, `api/`, `assets/`) |
-
-> **Deprecation note (2026-04-26):** The Electron desktop app is deprecated. It remains in the repo as a logic reference for the web prototype. The Next.js web prototype is the sole production target going forward.
 
 ## Goals
 
@@ -82,12 +79,10 @@ The web prototype uses client-side IndexedDB via the local store abstraction in 
 
 ## Non-goals / roadmap (from README, verify before marketing)
 
-`README` still lists as roadmap examples: **backup, restore, export to Excel** — treat as **not guaranteed** unless a feature exists in the repo. Confirm against actual menus and `api/` before claiming in release notes.
+`README` still lists as roadmap examples: **backup, restore, export to Excel** — treat as **not guaranteed** unless a feature exists in the repo. Confirm against actual shipped behavior before claiming in release notes.
 
 > **Note (2026-04-25):** UI prototypes for BIR compliance, thermal printer management, and audit/compliance features now exist in the Next.js web prototype with mock data.
 >
-> **Note (2026-04-26):** Electron app deprecated. Web prototype is the production target. Electron code retained as logic reference only.
-
 ## Default demo credentials
 
 Documented in `README` for first run (e.g. `admin` / `admin`); **change in production** and enforce user management policies locally.
@@ -102,11 +97,10 @@ When adding a feature, update:
 
 ## 2026-04-24T12:44:51Z - codex savepoint
 
-- The project now includes a Vercel-ready offline-first web POS prototype alongside the legacy Electron app, with deployment promotion and rollback expectations documented.
+- The project now includes a Vercel-ready offline-first web POS prototype, with deployment promotion and rollback expectations documented.
 
 ## 2026-04-26 - qoder savepoint
 
-- Electron app deprecated; retained as logic reference only
 - Web prototype is the sole production target
 - Updated Goals to reflect offline-first PWA direction
 - Updated all feature sections from "UI prototype only" to full-stack with IndexedDB

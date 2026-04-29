@@ -7,4 +7,4 @@
 
 ## 2026-04-24T12:44:51Z - codex savepoint
 
-- Treat the Next.js web prototype as the long-term POS direction while retaining Electron temporarily as fallback/reference.
+- Treat the Next.js web prototype as the POS direction and production target.

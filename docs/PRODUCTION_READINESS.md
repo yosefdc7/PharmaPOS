@@ -41,5 +41,4 @@ This document tracks the validated readiness gaps for the `web-prototype/` produ
 
 ## Notes
 
-- The deprecated Electron app remains reference-only and is not the release target for readiness work.
 - Experimental Next.js API and libSQL files remain in the repo, but they are not the default runtime path tracked by this checklist.

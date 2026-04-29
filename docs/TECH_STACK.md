@@ -1,62 +1,24 @@
 # Tech stack (living doc)
 
-> Source of truth: `package.json`, `server.js`, and `api/*.js`. Update this file when dependencies or architecture change.
+> Source of truth: root `package.json` and `web-prototype/package.json`. Update this file when dependencies or architecture change.
 
 ## Application
 
 | Layer | Technology | Notes |
 |--------|------------|--------|
-| Desktop shell | Electron `^41.2.2` | Main process entry: `start.js` (after `@electron/remote` init, Squirrel install handling). |
-| Packaging | Electron Forge `^6.x` / `^7.x` (makers, publisher) | Scripts: `start`, `package`, `make`, `publish`. |
-| Build / assets | Gulp 5, BrowserSync (dev) | Minify/concat CSS & JS; see repo scripts / gulp config. |
-| UI shell | `index.html` + static assets under `assets/` | jQuery `^3.6.3` and vendor plugins; not a SPA framework. |
+| Primary app | Next.js + React | Lives in `web-prototype/`; this is the production target UI. |
+| Runtime | Node.js 20+ | Used for Next.js development/build/runtime. |
+| Local persistence | Browser IndexedDB | Canonical local data path via `web-prototype/src/lib/db.ts` and `use-pos-store.ts`. |
+| Offline support | Serwist (`@serwist/turbopack`) | Service worker precache + offline fallback page. |
+| Thermal printing | Web Serial, Web Bluetooth, LAN bridge | Browser-side ESC/POS generation and queueing. |
 
-## Local server (embedded in Electron)
+## Local bridge service
 
 | Item | Detail |
 |------|--------|
-| HTTP | Node `http` + Express `^4.22.1` in `server.js` |
-| Default port | `3210`, overridable via `PORT` |
-| API prefix | Mounts under `/api/...` (see below) |
-| Middleware | `body-parser` (JSON + urlencoded), `express-rate-limit` (100 req / 15 min per key), CORS on `/*` |
-| **Not** wired in source | `socket.io` is declared in `package.json` but not imported by app JS/HTML in this tree |
-
-## HTTP API surface (Express routers)
-
-Routers are registered from `server.js`:
-
-- `/api/inventory` → `api/inventory.js` (e.g. products, SKU lookup)
-- `/api/customers` → `api/customers.js`
-- `/api/categories` → `api/categories.js`
-- `/api/settings` → `api/settings.js` (includes logo upload via `multer`)
-- `/api/users` → `api/users.js`
-- `/api` (transactions) → `api/transactions.js` (e.g. `/all`, `/on-hold`, `/by-date`, `/new`, …)
-
-## Persistence
-
-| Store | Library | Location |
-|-------|---------|------------|
-| Embedded document DB | `@seald-io/nedb` | Under `%APPDATA%/<APPNAME>/server/databases/` with per-domain `.db` files (`inventory`, `customers`, `categories`, `settings`, `users`, `transactions`) |
-
-`APPNAME` / app data path are set in `server.js` from Electron’s `app.getPath('appData')` and `package.json` `name` (`PharmaSpot`).
-
-## Security & auth-related libs
-
-- Password hashing: `bcrypt` (alias to `bcryptjs` in `package.json`)
-- Input: `validator`, `dompurify`, `sanitize` / `sanitize-filename`
-- File uploads: `multer` with size and MIME constraints in settings API
-
-## Other notable runtime dependencies
-
-- **Updates:** `electron-updater` (feed / UI in `assets/js/native_menu/menuController.js`)
-- **Local settings:** `electron-store`
-- **Printing / PDF / barcode:** `print-js`, `jspdf`, `html2canvas`, `jsbarcode`
-- **Misc:** `lodash`, `moment`, `archiver` / `unzipper` (backups/exports as implemented)
-
-## Tooling
-
-- Tests: Jest `^29.7.0` (`npm test`)
-- Dev: `nodemon`, `cross-env`, `electron-reloader`, `ts-node` (dev)
+| Service | `bridge/bridge-server.js` |
+| Purpose | Receives HTTP requests from web app and forwards Base64 ESC/POS payloads to TCP thermal printers |
+| Default URL | `http://localhost:9101` |
 
 ## Next.js Web Prototype
 
@@ -68,7 +30,7 @@ Routers are registered from `server.js`:
 | Offline sync model | Local sync queue | Simulated queue persisted in IndexedDB; no required backend for the default prototype runtime. |
 | Printer support | Web Serial, Web Bluetooth, LAN bridge | ESC/POS generation and queueing are browser-side. |
 | Permissions | `use-permissions.ts` hook | 4 roles (admin, supervisor, pharmacist, cashier), 16 permission keys. Supervisor override flow with audit trail. |
-| Experimental server path | Next.js route handlers + `@libsql/client` | Present in `web-prototype/src/app/api/` and `src/lib/server/` as reference or future migration work, not the default runtime path. |
+| Server path | Next.js route handlers + `@libsql/client` | Present under `web-prototype/src/app/api/` and `web-prototype/src/lib/server/` for web-prototype server-side flows. |
 
 ## Version
 

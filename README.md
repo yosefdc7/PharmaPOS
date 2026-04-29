@@ -1,10 +1,10 @@
 
 # PharmaSpot Point of Sale
-![GitHub package.json version](https://img.shields.io/github/package-json/v/drkNsubuga/PharmaSpot) ![GitHub all releases](https://img.shields.io/github/downloads/drkNsubuga/PharmaSpot/total) [![Build](https://github.com/drkNsubuga/PharmaSpot/actions/workflows/build.yml/badge.svg)](https://github.com/drkNsubuga/PharmaSpot/actions/workflows/build.yml) [![Release](https://github.com/drkNsubuga/PharmaSpot/actions/workflows/release.yml/badge.svg)](https://github.com/drkNsubuga/PharmaSpot/actions/workflows/release.yml) [![GitHub issues](https://img.shields.io/github/issues/drkNsubuga/PharmaSpot)](https://github.com/drkNsubuga/PharmaSpot) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/drkNsubuga/PharmaSpot/blob/main/LICENSE)
+![GitHub package.json version](https://img.shields.io/github/package-json/v/drkNsubuga/PharmaSpot) ![GitHub all releases](https://img.shields.io/github/downloads/drkNsubuga/PharmaSpot/total) [![Web Prototype Delivery](https://github.com/drkNsubuga/PharmaSpot/actions/workflows/web-prototype-delivery.yml/badge.svg)](https://github.com/drkNsubuga/PharmaSpot/actions/workflows/web-prototype-delivery.yml) [![GitHub issues](https://img.shields.io/github/issues/drkNsubuga/PharmaSpot)](https://github.com/drkNsubuga/PharmaSpot) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/drkNsubuga/PharmaSpot/blob/main/LICENSE)
 
 ![PharmaSpot Logo](assets/images/logo.svg)
 
-PharmaSpot is a cross-platform Point of Sale system designed for pharmacies and built to streamline operations and enhance customer service.
+PharmaSpot is an offline-first web Point of Sale system designed for pharmacies and built to streamline operations and enhance customer service.
 
 ## Features
 
@@ -59,21 +59,43 @@ https://github.com/user-attachments/assets/9b066b96-f06c-4b37-8211-58fd1fea5f01
 
 
 ## Getting Started
-- Download [PharmaSpot](https://github.com/drkNsubuga/PharmaSpot/releases/latest)
-- Unzip the package to a location of your choice.
-- Click the ``PharmaSpot`` executable in the folder
+
+- Install Node.js 20+.
+- Clone this repository.
+- Install dependencies:
+
+  ```bash
+  npm install
+  npm --prefix web-prototype install
+  ```
+
+- Start the web prototype:
+
+  ```bash
+  npm run dev
+  ```
+
 - Login for default user:
 
 	- ``username:`` admin
 	- ``password:`` admin
 
 ## For Developers
-- Clone this project.
-- Open terminal and navigate into the cloned folder.
-- Run ```npm install``` to install dependencies.
-- Run ```npm run start```.
-- Run ```gulp``` to bundle css and js assets
-- Run ```npm run test``` to run tests
+
+- Run web app checks:
+
+  ```bash
+  npm run typecheck
+  npm run test
+  npm run ci:gates
+  ```
+
+- Optional LAN printer bridge:
+
+  ```bash
+  cd bridge
+  node bridge-server.js
+  ```
   
 ## Credits
 
