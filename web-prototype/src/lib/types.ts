@@ -297,6 +297,7 @@ export type Settings = {
   receiptFooter: string;
   expiryAlertDays: number;
   scPwdSettings?: ScPwdSettings;
+  varianceSupervisorThreshold?: number;
 };
 
 export type CartItem = {
@@ -313,6 +314,24 @@ export type CartItem = {
 
 export type TransactionItem = CartItem & {
   lineTotal: number;
+};
+
+
+
+export type ShiftClosure = {
+  id: string;
+  expected_cash: number;
+  actual_cash: number;
+  variance: number;
+  variance_reason: string;
+  closed_by: string;
+  closed_at: string;
+  opening_float: number;
+  cash_sales: number;
+  cash_refunds_paid_outs: number;
+  supervisor_acknowledged?: boolean;
+  supervisor_id?: string;
+  supervisor_name?: string;
 };
 
 export type ScPwdDiscountType = "sc" | "pwd";

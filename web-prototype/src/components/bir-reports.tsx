@@ -1,18 +1,20 @@
 "use client";
 import { useState, useMemo } from "react";
-import type { PermissionKey, ScPwdAlert, ScPwdTransactionLogRow, ScPwdSummaryCard, User } from "@/lib/types";
+import type { PermissionKey, ScPwdAlert, ScPwdTransactionLogRow, ScPwdSummaryCard, Settings, User } from "@/lib/types";
 import { XReadingReport } from "./x-reading";
 import { ZReadingReport } from "./z-reading";
 import { EJournalExport } from "./ejournal-export";
 import { ESalesReport } from "./esales-report";
 import { ScpwdTransactionLog } from "./scpwd-transaction-log";
 import { ScpwdSummaryCardComponent } from "./scpwd-summary-card";
+import { ShiftClosePanel } from "./shift-close";
 
-type BirReportTab = "x-reading" | "z-reading" | "ejournal" | "esales" | "sc-pwd";
+type BirReportTab = "x-reading" | "z-reading" | "shift-close" | "ejournal" | "esales" | "sc-pwd";
 
 const allTabs: { key: BirReportTab; label: string; requiredPermission?: PermissionKey }[] = [
   { key: "x-reading", label: "X-Reading", requiredPermission: "xReading" },
   { key: "z-reading", label: "Z-Reading", requiredPermission: "zReadingView" },
+  { key: "shift-close", label: "Shift Close", requiredPermission: "reports" },
   { key: "ejournal", label: "eJournal", requiredPermission: "reports" },
   { key: "esales", label: "eSales", requiredPermission: "reports" },
   { key: "sc-pwd", label: "SC/PWD" },
@@ -61,6 +63,7 @@ type BirReportsPanelProps = {
   canPerformAction?: (action: PermissionKey) => boolean;
   users?: User[];
   currentUser?: User | null;
+  settings: Settings;
   acknowledgeOverride?: (
     actionType: "void" | "refund" | "override" | "zReading",
     supervisorId: string,
@@ -78,6 +81,7 @@ export function BirReportsPanel({
   users,
   currentUser,
   acknowledgeOverride,
+  settings,
 }: BirReportsPanelProps) {
   const [tab, setTab] = useState<BirReportTab>("x-reading");
   const tabs = allTabs.filter((t) => {
@@ -117,6 +121,7 @@ export function BirReportsPanel({
           acknowledgeOverride={acknowledgeOverride}
         />
       )}
+      {tab === "shift-close" && <ShiftClosePanel settings={settings} users={users} currentUser={currentUser} canPerformAction={canPerformAction} acknowledgeOverride={acknowledgeOverride} />}
       {tab === "ejournal" && <EJournalExport />}
       {tab === "esales" && <ESalesReport />}
       {tab === "sc-pwd" && (
