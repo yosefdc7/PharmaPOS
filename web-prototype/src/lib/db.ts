@@ -32,11 +32,12 @@ import type {
   ZReading,
   PrescriptionDraft,
   RxSettings,
-  SupervisorAck
+  SupervisorAck,
+  ShiftClosure
 } from "./types";
 
 const DB_NAME = "pharmaspot-web-prototype";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 const SESSION_KEY = "pharmapos.auth.session";
 const AUTO_LOGIN_SUPPRESS_KEY = "pharmapos.auth.suppressAutoLogin";
 const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -72,7 +73,8 @@ export type StoreName =
   | "xReadings"
   | "zReadings"
   | "reprintQueue"
-  | "supervisorAcks";
+  | "supervisorAcks"
+  | "shiftClosures";
 
 const STORES: StoreName[] = [
   "meta",
@@ -93,7 +95,8 @@ const STORES: StoreName[] = [
   "xReadings",
   "zReadings",
   "reprintQueue",
-  "supervisorAcks"
+  "supervisorAcks",
+  "shiftClosures"
 ];
 
 type StoreEntityMap = {
@@ -116,6 +119,7 @@ type StoreEntityMap = {
   zReadings: ZReading;
   reprintQueue: ReprintQueueItem;
   supervisorAcks: SupervisorAck;
+  shiftClosures: ShiftClosure;
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -230,6 +234,29 @@ function applyMigrations(db: IDBDatabase, tx: IDBTransaction, oldVersion: number
   // V6: add supervisorAcks store for role-based permissions
   if (oldVersion < 6) {
     tx.objectStore("meta").put({ id: "schemaVersion", value: 6 });
+  }
+
+  // V7: reserved
+  if (oldVersion < 7) {
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 7 });
+  }
+
+  // V8: shift close records and variance threshold setting backfill
+  if (oldVersion < 8) {
+    const settingsStore = tx.objectStore("settings");
+    const cursor = settingsStore.openCursor();
+    cursor.onsuccess = (event) => {
+      const result = (event.target as IDBRequest<IDBCursorWithValue>).result;
+      if (result) {
+        const value = result.value as Settings;
+        if (typeof value.varianceSupervisorThreshold !== "number") {
+          value.varianceSupervisorThreshold = 100;
+          settingsStore.put(value);
+        }
+        result.continue();
+      }
+    };
+    tx.objectStore("meta").put({ id: "schemaVersion", value: 8 });
   }
 }
 

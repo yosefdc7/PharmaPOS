@@ -340,7 +340,8 @@ export const seedSettings: Settings = {
   quickBilling: false,
   receiptFooter: "Thank you for choosing PharmaPOS PH.",
   expiryAlertDays: 30,
-  scPwdSettings: seedScPwdSettings
+  scPwdSettings: seedScPwdSettings,
+  varianceSupervisorThreshold: 100
 };
 
 export const seedBirSettings: BirSettings & { id: string } = {

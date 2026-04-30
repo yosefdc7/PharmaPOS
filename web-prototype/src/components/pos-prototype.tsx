@@ -1636,7 +1636,8 @@ function SettingsView({
         chargeTax: data.chargeTax === "on",
         quickBilling: data.quickBilling === "on",
         receiptFooter: data.receiptFooter,
-        expiryAlertDays: Math.max(1, Math.min(365, Number(data.expiryAlertDays) || 30))
+        expiryAlertDays: Math.max(1, Math.min(365, Number(data.expiryAlertDays) || 30)),
+        varianceSupervisorThreshold: Math.max(0, Number(data.varianceSupervisorThreshold) || 0)
       },
       "settings"
     );
@@ -1799,6 +1800,10 @@ function SettingsView({
             <label className="input-label">
               Expiry alert threshold (days)
               <input name="expiryAlertDays" type="number" min="1" max="365" defaultValue={settings.expiryAlertDays ?? 30} />
+            </label>
+            <label className="input-label">
+              Shift variance supervisor threshold
+              <input name="varianceSupervisorThreshold" type="number" min="0" step="0.01" defaultValue={settings.varianceSupervisorThreshold ?? 100} />
             </label>
             <label className="input-label">
               Receipt footer
@@ -2121,6 +2126,7 @@ function ReportsView({
           users={users}
           currentUser={currentUser}
           acknowledgeOverride={acknowledgeOverride}
+          settings={settings}
         />
       ) : null}
       {reportsTab === "audit" ? (
