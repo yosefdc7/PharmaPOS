@@ -1,113 +1,93 @@
 # Product requirements (living doc)
 
-> **PharmaSpot** — pharmacy point of sale. This document summarizes product intent and what the codebase actually implements. Align feature bullets with `README.md` and user-facing behavior.
+> **PharmaPOS PH** - pharmacy point of sale. This document summarizes product intent and what the codebase actually implements. Align feature bullets with `README.md` and user-facing behavior.
 
 ## Product identity
 
-| Field | Value (check `package.json`) |
-|-------|------------------------------|
-| Name | PharmaSpot |
+| Field | Value |
+|-------|-------|
+| Name | PharmaPOS PH |
 | One-liner | Easy point of sale for pharmacies (Patterns Digital / product marketing) |
-| Version | From root `package.json` `version` |
+| Version | 1.5.3 |
 | Primary app | Next.js web prototype (`web-prototype/`) |
 
 ## Goals
 
-1. **Offline-first web POS:** A browser-based Progressive Web App that works without internet, powered by IndexedDB for local persistence.
-2. **Operational speed:** Barcode and search-led selling, quick payment and receipt.
-3. **Inventory safety:** Stock levels, low-stock awareness, optional expiry tracking and alerts.
-4. **Accountability:** Staff users, permissions, transaction history and filtering (e.g. by date, status).
-5. **Data ownership:** Local databases in the browser; optionally synced to a backend when connectivity is available.
-6. **Regulatory compliance:** BIR-compliant receipts, X/Z-reading reports, eJournal and eSales exports; dangerous-drugs and prescription workflow support.
+1. Offline-first web POS with IndexedDB-backed local persistence.
+2. Operational speed through barcode/search-led selling.
+3. Inventory safety with stock, low-stock, and expiry awareness.
+4. Accountability via users, permissions, and transaction history.
+5. Data ownership with local databases and optional sync later.
+6. Regulatory compliance for BIR receipts, X/Z-reading, eJournal, eSales, and Rx/DD workflows.
 
-## In-scope capabilities (as reflected in web prototype)
+## In-scope capabilities
 
-- **Point of sale:** Sales flow, payments, receipt generation with thermal printer support.
-- **Catalog:** Products, categories, custom barcodes/SKU.
-- **Inventory:** Product CRUD and stock management.
-- **Customers:** Customer records and profiles.
-- **Transactions:** History, on-hold orders, by-date filtering.
-- **Users & settings:** User accounts, settings and branding.
-- **Offline-first PWA:** Service worker, IndexedDB persistence, background sync queue.
-- **Thermal printer:** USB/Bluetooth/LAN printer profiles, ESC/POS command generation, receipt layout config, print queue with retry.
+- Point of sale: sales flow, payments, receipt generation, thermal printer support.
+- Catalog: products, categories, custom barcodes/SKU.
+- Inventory: product CRUD and stock management.
+- Customers: customer records and profiles.
+- Transactions: history, on-hold orders, by-date filtering.
+- Users & settings: user accounts, settings, and branding.
+- Offline-first PWA: service worker, IndexedDB persistence, background sync queue.
+- Thermal printer: USB/Bluetooth/LAN printer profiles, ESC/POS generation, print queue with retry.
+- Multi-PC support: shared workflow assumptions for multiple workstations on the same network.
+- Stock visibility: low-stock alerts, expiry tracking, and profit calculations.
 
 ### BIR Compliance
 
-> All items below are implemented as full-stack screens in the Next.js web prototype (`web-prototype/`). Persistence is via IndexedDB. BIR submission to government systems is out of scope (manual process for now).
-
-- **BIR Settings configuration:** TIN, registered business name and address, VAT registration status, Permit-to-Use (PTU) number, POS machine serial number, BIR accreditation number, and Official Receipt (OR) series range management.
-- **Compliance status indicator:** Visual completeness gauge showing which required BIR fields have been filled in.
-- **Official Receipt (OR) preview:** Displays a receipt template with all BIR-required fields; includes normal, void, and reprint receipt variants.
-- **X-Reading report:** Mid-day sales snapshot report generation and on-screen display.
-- **Z-Reading report:** End-of-day reset report with lock/override mechanism and searchable history log.
-- **eJournal export:** Electronic sales journal viewer with validation checks and date-range selection for export.
-- **eSales report:** Monthly sales report with daily breakdown view and CSV export option.
-- **VAT / Non-VAT toggle:** Classification switch that adjusts the receipt template between VAT-registered and non-VAT layouts.
+- BIR settings configuration: TIN, business name/address, VAT status, PTU number, POS serial, accreditation number, OR series range.
+- Compliance status indicator: completeness gauge for required BIR fields.
+- OR preview: normal, void, and reprint receipt variants.
+- X-Reading report: mid-day snapshot report.
+- Z-Reading report: end-of-day reset report with lock/override and history.
+- eJournal export: date-range viewer with validation.
+- eSales report: monthly report with daily breakdown and CSV export.
+- VAT / Non-VAT toggle: receipt layout switch.
 
 ### Thermal Printer Management
 
-> Hardware thermal printer support via Web Serial API (USB), Web Bluetooth API, and LAN bridge. ESC/POS command generation is browser-compatible and produces raw byte output for direct printer communication.
-
-- **Multi-printer profile management:** Create, edit, and delete printer profiles for USB, Bluetooth, and LAN connections.
-- **ESC/POS command engine:** Generates raw ESC/POS byte sequences for text formatting, alignment, bold/double-height, barcodes, QR codes, line feeds, and paper cuts — compatible with 58mm and 80mm thermal printers.
-- **Receipt content builder:** Produces BIR-compliant receipt output for normal, void, reprint, X-reading, Z-reading, and daily-summary variants. Includes SC/PWD discount metadata and item-level VAT exemption markers.
-- **Receipt layout configuration:** Customize logo, header text, footer text, and auto-cut settings per printer profile.
-- **Printer status monitoring:** Live-style indicators showing Online, Offline, Paper Low, and Error states.
-- **Reprint queue:** List of failed or pending print jobs with retry and cancel actions.
-- **Print failure handling:** Modal workflow offering a digital receipt fallback with QR code placeholder when a print job fails.
-- **Auto-detect USB printers:** Simulated USB printer discovery list.
-
-### Audit & Compliance
-
-> BIR report generation audit trail and printer activity log with full persistence to IndexedDB.
+- Multi-printer profile management: USB, Bluetooth, and LAN profiles.
+- ESC/POS engine: raw byte output for text formatting, alignment, bold/double-height, barcodes, QR codes, feeds, and cuts.
+- Receipt builder: BIR-compliant receipt output for normal, void, reprint, X-reading, Z-reading, and daily-summary variants.
+- Receipt layout config: logo, header/footer text, auto-cut settings.
+- Printer status monitoring: Online, Offline, Paper Low, Error.
+- Reprint queue: failed/pending jobs with retry and cancel.
+- Print failure handling: digital receipt fallback with QR placeholder.
+- Auto-detect USB printers: simulated discovery list.
 
 ### Rx/DD Compliance Workspace
 
-> Rx/DD flows are fully implemented UI screens in the Next.js prototype with IndexedDB persistence, mapped to `RX-1` to `RX-37` in `rxdd_user_stories.md`.
-
-- **Drug classification setup:** Mandatory class display and product metadata fields for DD/EDD/Rx/Pharmacist-Only OTC/Non-Rx OTC.
-- **Dispensing checkpoints:** UI gates and warnings for Rx/DD/EDD plus pharmacist acknowledgment for Pharmacist-Only OTC.
-- **Prescription entry drawer:** Captures prescriber/patient/dispensing fields with DD and EDD-specific inputs (S-2 and Yellow Rx where applicable).
-- **Patient medication profile:** Searchable profile timeline with export actions for inspection scenarios.
-- **Dangerous Drugs log:** Register-style DD/EDD transaction table with export controls and running-balance surface.
-- **Inspection dashboard:** One-screen summary of Rx/DD activity, open partials, red flags, and role-gated compliance visibility.
-- **Prescription reset protection:** UI exposes a hard-block policy for prototype reset exclusion of prescription and DD data domains.
+- Drug classification setup: DD/EDD/Rx/Pharmacist-Only OTC/Non-Rx OTC metadata.
+- Dispensing checkpoints: UI gates and pharmacist acknowledgment.
+- Prescription entry drawer: prescriber/patient/dispensing fields.
+- Patient medication profile: searchable timeline with export actions.
+- Dangerous Drugs log: register-style transaction table with running balance.
+- Inspection dashboard: compliance summary and red flags.
+- Prescription reset protection: excludes prescription and DD domains from prototype reset.
 
 ## API contract (summary)
 
-The web prototype uses client-side IndexedDB via the local store abstraction in `web-prototype/src/lib/db.ts` and `web-prototype/src/lib/use-pos-store.ts`. Experimental Next.js API routes and `src/lib/server/` files may exist in the repo for future migration work, but they are not the default production runtime path for the prototype today.
+The web prototype uses client-side IndexedDB via `web-prototype/src/lib/db.ts` and `web-prototype/src/lib/use-pos-store.ts`. Experimental Next.js API routes and `src/lib/server/` files may exist, but they are not the default production runtime path.
 
-## Non-goals / roadmap (from README, verify before marketing)
+## Non-goals / roadmap
 
-`README` still lists as roadmap examples: **backup, restore, export to Excel** — treat as **not guaranteed** unless a feature exists in the repo. Confirm against actual shipped behavior before claiming in release notes.
+`README` still lists roadmap examples like backup, restore, and Excel export - treat these as not guaranteed unless they exist in the repo.
 
-> **Note (2026-04-25):** UI prototypes for BIR compliance, thermal printer management, and audit/compliance features now exist in the Next.js web prototype with mock data.
->
+> **Note (2026-04-29):** This doc reflects the current offline-first web prototype, BIR/thermal printer flows, and Rx/DD compliance workspace as the primary product scope.
+
 ## Default demo credentials
 
-Documented in `README` for first run (e.g. `admin` / `admin`); **change in production** and enforce user management policies locally.
+Documented in `README` for first run (for example `admin` / `admin`); change in production.
 
 ## Maintenance
 
-When adding a feature, update:
+1. Update this file when product scope changes.
+2. Update `docs/TECH_STACK.md` when dependencies, routes, or storage paths change.
+3. Update `README` for user-facing feature lists and screenshots.
 
-1. This file if the product story or scope changes.
-2. `docs/TECH_STACK.md` if new dependencies, routes, or storage paths are introduced.
-3. `README` for end-user feature lists and screenshots.
+## Savepoints
 
-## 2026-04-24T12:44:51Z - codex savepoint
+- 2026-04-24T12:44:51Z - Vercel-ready offline-first web POS prototype and rollout expectations documented.
+- 2026-04-26 - Web prototype became the sole production target and was centered on IndexedDB.
+- 2026-04-26 - Thermal printer management moved from mock UI to real ESC/POS support.
 
-- The project now includes a Vercel-ready offline-first web POS prototype, with deployment promotion and rollback expectations documented.
-
-## 2026-04-26 - qoder savepoint
-
-- Web prototype is the sole production target
-- Updated Goals to reflect offline-first PWA direction
-- Updated all feature sections from "UI prototype only" to full-stack with IndexedDB
-
-## 2026-04-26 - qoder savepoint (thermal printer)
-
-- Thermal printer management updated from mock UI to real hardware support
-- ESC/POS command engine generates raw byte output for 58mm/80mm thermal printers
-- Receipt content builder produces BIR-compliant receipts for all variants (normal, void, reprint, X-reading, Z-reading, daily-summary)
-- Unit tests for ESC/POS commands (33 tests) and receipt content builder (22 tests) all passing
